@@ -1,5 +1,6 @@
 services:
   subrenamer:
+    image: beiming712/subrenamerweb:latest
     build: .
     container_name: subrenamer
     ports:

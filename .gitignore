@@ -6,3 +6,5 @@ media/
 uploads/
 config/
 *.DotSettings.user
+.idea/
+publish/
