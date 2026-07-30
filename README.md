@@ -2,96 +2,170 @@
 
 基于 [SubRenamer](https://github.com/qwqcode/SubRenamer) 核心算法的 Docker + WebUI 改造版。
 
-字幕批量改名工具,复用原项目 `SubRenamer.Core` 匹配算法(零修改),提供浏览器 Web 界面,容器化部署。
+字幕批量匹配、改名与自动调轴工具。复用原项目 `SubRenamer.Core` 匹配算法（零修改），提供浏览器 Web 界面和 Docker 部署支持。
 
 ## 特性
 
-- **混合模式**:视频从挂载目录读取,字幕通过浏览器上传
-- **同文件夹改名**:挂载目录里的字幕可直接改名(支持 SubBackup 备份)
-- **一键匹配**:调用 SubRenamer.Core diff 算法自动关联视频与字幕
-- **结果微调**:匹配后可在前端手动调整对应关系
-- **Docker 部署**:开箱即用,挂载媒体库即用
+- **混合文件模式**：视频从挂载目录扫描，字幕通过浏览器批量上传
+- **同文件夹模式**：直接匹配并改名挂载目录中的字幕，可选 `SubBackup` 备份
+- **自动匹配**：调用 `SubRenamer.Core` diff 算法关联视频与字幕
+- **改名预览与微调**：执行前预览目标文件名，可手动调整匹配关系
+- **多语言字幕**：支持一个视频匹配多个字幕，自动识别 `chs`、`cht`、`zh`、`ja`、`en` 等语言标记
+- **自动调轴**：通过 FFsubsync + FFmpeg 对齐字幕时间轴，采用异步任务并实时显示进度和日志
+- **多架构镜像**：GitHub Actions 自动发布 `linux/amd64` 和 `linux/arm64` 镜像
 
-## 快速开始
+## 使用 Docker Hub 镜像
+
+镜像地址：[`beiming712/subrenamerweb`](https://hub.docker.com/r/beiming712/subrenamerweb)
+
+Docker 会根据设备自动选择 AMD64 或 ARM64 版本：
 
 ```bash
-# 1. 准备媒体目录(放视频文件)
-mkdir -p media && cp -r /path/to/your/videos media/
+docker run -d \
+  --name subrenamer \
+  -p 38080:8080 \
+  -v /path/to/media:/media \
+  --tmpfs /uploads:mode=1777 \
+  --restart unless-stopped \
+  beiming712/subrenamerweb:latest
+```
 
-# 2. 构建并启动
+浏览器访问 `http://宿主机IP:38080`。
+
+> 媒体目录需要可写权限，因为改名和调轴后的字幕会写入视频所在目录。
+
+## Docker Compose
+
+修改 `docker-compose.yml` 中的媒体目录、UID 和 GID：
+
+```yaml
+volumes:
+  - /path/to/media:/media
+user: "1000:10"
+```
+
+使用已发布镜像启动：
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+从源码重新构建：
+
+```bash
 docker compose up -d --build
-
-# 3. 打开浏览器
-open http://localhost:8080
 ```
 
-也可用 `docker run`:
-```bash
-docker build -t subrenamer-web .
-docker run -d -p 8080:8080 -v /path/to/media:/media subrenamer-web
-```
+默认访问地址为 `http://localhost:38080`。
 
 ## 使用流程
 
-1. **扫描** — 输入子目录(留空扫全部)→ 点击扫描,列出视频与挂载字幕
-2. **上传** — 拖拽字幕文件到上传区(支持批量)
-3. **匹配** — 点击"一键匹配",自动关联视频与字幕
-4. **微调** — 在结果表格里下拉调整错误对应
-5. **改名** — 勾选备份、填语言后缀(可选)→ 执行改名
+1. **扫描**：输入媒体库子目录（留空扫描根目录），列出视频和已挂载字幕
+2. **上传**：将字幕批量拖入上传区；如果字幕已与视频放在同一目录，可跳过此步
+3. **匹配**：点击“一键匹配”，自动关联视频与字幕并显示改名预览
+4. **微调**：在结果表格中手动修正匹配关系，必要时填写附加语言后缀
+5. **改名**：执行字幕改名；上传字幕会复制到视频目录，挂载字幕会在原目录改名
+6. **调轴**：对匹配结果启动调轴任务，通过进度条和日志查看处理状态
 
-字幕会重命名后写入视频所在目录。挂载目录内的字幕走直接改名,上传的字幕走拷贝。
+### 调轴说明
+
+调轴功能调用 FFsubsync 分析视频音轨，并通过 FFmpeg 辅助处理：
+
+- 任务在后台异步执行，浏览器每秒查询一次状态
+- 支持批量处理匹配结果
+- 输出字幕位于视频所在目录，文件名与视频主文件名一致并保留字幕扩展名
+- 单个项目失败后会记录错误并继续处理下一项
+- Docker 镜像已内置 Python 3、FFsubsync 和 FFmpeg，无需额外安装
+
+调轴依赖视频中存在可分析的音轨。处理大文件时需要一定 CPU、内存和临时存储空间，ARM 设备耗时通常更长。
 
 ## 文件权限
 
-容器默认以 UID 1000 运行。若写入媒体库时权限不足,在 `docker-compose.yml` 取消 `user` 注释,改成你的 UID:GID(终端 `id` 查看)。
+`docker-compose.yml` 默认使用 `1000:10` 运行容器。请按宿主机媒体目录的所有者修改：
+
+```bash
+id
+```
+
+如果容器可以扫描但无法改名或调轴，通常是 `/media` 没有写权限。不要为了省事给媒体库设置 `777`，优先让容器 UID/GID 与目录所有者一致。
 
 ## API 文档
 
-启动后访问 `http://localhost:8080/api/docs`(Swagger)。
+启动后访问 `http://宿主机IP:38080/api/docs` 查看 Swagger。
 
-主要接口:
+主要接口：
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/files/scan?dir=` | 扫描挂载目录 |
-| POST | `/api/subtitles/upload` | 上传字幕(批量) |
+| GET | `/api/files/scan?dir=` | 扫描媒体目录 |
+| POST | `/api/subtitles/upload` | 批量上传字幕 |
 | POST | `/api/match` | 匹配视频与字幕 |
 | POST | `/api/rename` | 执行改名 |
-| POST | `/api/sync` | 调轴(占位,后续接入) |
+| POST | `/api/sync` | 创建异步调轴任务，返回 `taskId` |
+| GET | `/api/sync/{taskId}/status` | 查询调轴进度、状态和日志 |
 
 ## 本地开发
 
-需 .NET 8 SDK:
+基础功能需要 .NET 8 SDK：
+
 ```bash
-cd src
-dotnet sln add SubRenamer.Core/SubRenamer.Core.csproj
-dotnet sln add SubRenamer.Web/SubRenamer.Web.csproj
-# 或直接运行 Web 项目
-dotnet run --project SubRenamer.Web/SubRenamer.Web.csproj
+dotnet restore src/SubRenamer.Web/SubRenamer.Web.csproj
+dotnet run --project src/SubRenamer.Web/SubRenamer.Web.csproj
+```
+
+如果需要在非 Docker 环境测试调轴，还需安装：
+
+- Python 3
+- FFmpeg
+- `ffsubsync` Python 包
+
+本地运行时可通过环境变量指定目录：
+
+```bash
+MEDIA_DIR=/path/to/media \
+UPLOAD_DIR=/tmp/subrenamer-uploads \
+dotnet run --project src/SubRenamer.Web/SubRenamer.Web.csproj
 ```
 
 ## 项目结构
 
-```
+```text
 SubRenamer.Web/
+├── .github/workflows/         # AMD64/ARM64 镜像发布流水线
 ├── src/
-│   ├── SubRenamer.Core/      # 复用原项目核心匹配算法(零修改)
-│   └── SubRenamer.Web/       # Web API + 静态前端
-│       ├── Models/           # DTO
-│       ├── Services/         # 扫描/上传/改名服务
-│       ├── Controllers/      # API 控制器
-│       └── wwwroot/          # 单页前端
+│   ├── SubRenamer.Core/       # 原项目核心匹配算法（零修改）
+│   └── SubRenamer.Web/        # ASP.NET Core Web API + 单页前端
+│       ├── Controllers/       # 扫描、上传、匹配、改名、调轴接口
+│       ├── Models/            # DTO 与任务状态模型
+│       ├── Services/          # 文件、改名和调轴服务
+│       ├── scripts/           # FFsubsync Python 包装程序
+│       └── wwwroot/           # WebUI
 ├── Dockerfile
 ├── docker-compose.yml
 └── README.md
 ```
 
+## 镜像发布
+
+推送到 `main` 分支后，GitHub Actions 自动构建多架构镜像并发布：
+
+- `beiming712/subrenamerweb:latest`
+- `beiming712/subrenamerweb:main`
+
+推送版本标签（例如 `v1.1.0`）时还会发布：
+
+- `beiming712/subrenamerweb:1.1.0`
+- `beiming712/subrenamerweb:1.1`
+
 ## 后续计划
 
-- [ ] 接入 FFsubsync + FFmpeg 实现自动调轴(异步任务 + 进度轮询)
-- [ ] 手动匹配规则编辑器(正则)
-- [ ] 多语言字幕一对多匹配增强
+- [x] FFsubsync + FFmpeg 自动调轴（异步任务 + 进度轮询）
+- [x] 多语言字幕一对多匹配与语言标记识别
+- [x] Docker Hub AMD64/ARM64 多架构镜像发布
+- [ ] 手动匹配规则编辑器（正则）
+- [ ] 跨层级目录递归搜索
 
 ## 开源协议
 
-核心算法 `SubRenamer.Core` 遵循原项目 [GPL-2.0](https://github.com/qwqcode/SubRenamer/blob/main/LICENSE) 协议。
+本项目基于 GPL-2.0 授权的 `SubRenamer.Core`，整体遵循仓库中的 [GPL-2.0 License](LICENSE)。原项目地址：[qwqcode/SubRenamer](https://github.com/qwqcode/SubRenamer)。
