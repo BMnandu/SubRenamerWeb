@@ -1,0 +1,19 @@
+services:
+  subrenamer:
+    build: .
+    container_name: subrenamer
+    ports:
+      - "38080:8080"
+    volumes:
+      # 媒体库(读写:字幕要写入视频所在目录)
+      - /volume2/media:/media
+    tmpfs:
+      # 上传临时目录(内存,容器重启自动清空,无需映射宿主机,无权限问题)
+      - /uploads:mode=1777
+    environment:
+      - MEDIA_DIR=/media
+      - UPLOAD_DIR=/uploads
+      - ASPNETCORE_URLS=http://+:8080
+    # 匹配媒体目录 owner(1000:10),确保写字幕权限
+    user: "1000:10"
+    restart: unless-stopped

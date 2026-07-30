@@ -1,0 +1,8 @@
+bin/
+obj/
+*.user
+.vs/
+media/
+uploads/
+config/
+*.DotSettings.user

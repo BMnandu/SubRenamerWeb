@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SubRenamer.Web</title>
+<style>
+  :root {
+    --bg: #16161e; --surface: #1f2335; --surface2: #24283b;
+    --text: #c0caf5; --muted: #565f89; --border: #2a2e44;
+    --accent: #7aa2f7; --green: #9ece6a; --amber: #e0af68; --red: #f7768e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.5; padding: 10px; }
+  h1 { font-size: 17px; font-weight: 600; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .layout { max-width: 1600px; margin: 0 auto; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+  .panel:last-child { margin-bottom: 0; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  input[type=text], select { background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 5px; padding: 6px 10px; font-size: 12px; }
+  input[type=text] { min-width: 160px; }
+  .btn { background: var(--accent); color: #1a1b26; border: none; border-radius: 5px;
+    padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .btn:hover { filter: brightness(1.1); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn.ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn.green { background: var(--green); }
+  .stats { display: flex; gap: 8px; flex-wrap: wrap; }
+  .stat { background: var(--surface2); border-radius: 6px; padding: 6px 12px; min-width: 80px; text-align: center; }
+  .stat .n { font-size: 18px; font-weight: 700; }
+  .stat .l { font-size: 10px; color: var(--muted); }
+  .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .head .spacer { flex: 1; }
+  .head .btn-group { display: flex; gap: 6px; }
+  .main { display: grid; grid-template-columns: 300px 1fr; gap: 10px; align-items: start; }
+  .right { min-height: 420px; display: flex; flex-direction: column; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; position: sticky; top: 0; background: var(--surface); }
+  td.filename { font-family: ui-monospace, monospace; font-size: 11px; }
+  td.preview { font-family: ui-monospace, monospace; font-size: 11px; color: var(--green); }
+  td.preview.approx { color: var(--amber); }
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; }
+  .tag.video { background: rgba(122,162,247,.15); color: var(--accent); }
+  .tag.sub { background: rgba(158,206,106,.15); color: var(--green); }
+  .tag.upload { background: rgba(224,175,104,.15); color: var(--amber); }
+  .tag.unmatched { background: rgba(247,118,142,.15); color: var(--red); }
+  select { min-width: 220px; max-width: 100%; }
+  .opts { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  label { font-size: 12px; display: flex; align-items: center; gap: 4px; }
+  .msg { padding: 8px 12px; border-radius: 5px; font-size: 12px; margin-top: 8px; display: none; }
+  .msg.show { display: block; }
+  .msg.ok { background: rgba(158,206,106,.1); color: var(--green); }
+  .msg.err { background: rgba(247,118,142,.1); color: var(--red); }
+  .empty { color: var(--muted); text-align: center; padding: 40px 20px; font-size: 13px; }
+  .filelist { max-height: 200px; overflow-y: auto; }
+  .filelist .fi { padding: 2px 0; font-size: 11px; font-family: ui-monospace, monospace; }
+  .filelist .drop-hint { border: 1px dashed var(--border); border-radius: 6px; padding: 10px; text-align: center; color: var(--muted); font-size: 11px; margin-bottom: 8px; cursor: pointer; }
+  .filelist .drop-hint.over { border-color: var(--accent); color: var(--accent); background: rgba(122,162,247,.05); }
+  .table-wrap { flex: 1; overflow: auto; max-height: 75vh; }
+  .hint { color: var(--muted); font-size: 11px; margin-top: 6px; }
+  .section-title { font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 6px; }
+
+  /* 模态 */
+  .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 100; }
+  .modal-mask.show { display: flex; }
+  .modal { background: var(--surface); border-radius: 10px; width: 480px; max-width: 92vw; max-height: 80vh; display: flex; flex-direction: column; border: 1px solid var(--border); overflow: hidden; }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .modal-header h3 { font-size: 15px; font-weight: 500; }
+  .modal-close { background: none; border: none; color: var(--muted); font-size: 24px; cursor: pointer; }
+  .modal-close:hover { color: var(--text); }
+  .modal-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; padding: 10px 14px; min-height: 0; }
+  .sort-bar { display: flex; gap: 6px; align-items: center; padding-bottom: 8px; font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--border); margin-bottom: 6px; }
+  .sort-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 3px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; }
+  .sort-btn.active { border-color: var(--accent); color: var(--accent); }
+  .dir-list { flex: 1; overflow-y: auto; min-height: 180px; }
+  .dir-row { display: flex; align-items: center; padding: 6px 4px; cursor: pointer; border-radius: 4px; font-size: 13px; }
+  .dir-row:hover { background: var(--surface2); }
+  .dir-icon { margin-right: 8px; }
+  .dir-name { flex: 1; }
+  .dir-meta { color: var(--muted); font-size: 10px; margin-left: 10px; font-family: ui-monospace, monospace; }
+  .modal-footer { display: flex; justify-content: space-between; align-items: center; padding: 10px 18px; border-top: 1px solid var(--border); }
+  .path-display { font-family: ui-monospace, monospace; font-size: 11px; color: var(--accent); }
+
+  /* 进度 */
+  .progress-bar { background: var(--surface2); border-radius: 4px; height: 5px; margin: 6px 0; overflow: hidden; }
+  .progress-bar > div { background: var(--accent); height: 100%; transition: width .3s; }
+  .sync-logs { margin-top: 6px; max-height: 80px; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 10px; color: var(--muted); }
+  .sync-logs > div { padding: 1px 0; }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- 顶栏:扫描 + 统计 + 执行按钮 -->
+  <div class="panel">
+    <div class="head">
+      <h1>SubRenamer.Web</h1>
+      <input type="text" id="dirInput" placeholder="子目录(留空扫全部)">
+      <button class="btn ghost" onclick="openDirModal()">浏览</button>
+      <button class="btn" onclick="scan()">扫描</button>
+      <div class="stats">
+        <div class="stat"><div class="n" id="vCount">0</div><div class="l">视频</div></div>
+        <div class="stat"><div class="n" id="sCount">0</div><div class="l">挂载字幕</div></div>
+        <div class="stat"><div class="n" id="uCount">0</div><div class="l">上传字幕</div></div>
+        <div class="stat"><div class="n" id="mCount">0</div><div class="l">匹配项</div></div>
+      </div>
+      <div class="spacer"></div>
+      <div class="btn-group">
+        <button class="btn ghost" onclick="document.getElementById('fileInput').click()">上传字幕</button>
+        <button class="btn" onclick="doRename()" id="renameBtn" disabled>执行改名</button>
+        <button class="btn green" onclick="doSync()" id="syncBtn" disabled>执行调轴</button>
+      </div>
+    </div>
+    <input type="file" id="fileInput" multiple accept=".srt,.ass,.ssa,.sub,.vtt,.smi,.lrc,.txt" style="display:none" onchange="upload(this.files)">
+  </div>
+
+  <div class="main">
+    <aside>
+      <!-- 文件列表(带拖拽上传) -->
+      <div class="panel">
+        <div class="section-title">文件列表</div>
+        <div class="filelist" id="fileListWrap">
+          <div class="drop-hint" id="dropHint" onclick="document.getElementById('fileInput').click()">拖拽字幕到此处,或点击上传</div>
+          <div id="fileList"></div>
+        </div>
+      </div>
+
+      <!-- 改名选项 -->
+      <div class="panel">
+        <div class="section-title">改名选项</div>
+        <div class="opts" style="margin-bottom:8px">
+          <label><input type="checkbox" id="backupChk"> 改名前备份</label>
+          <label>附加后缀 <input type="text" id="langInput" placeholder="可选" style="min-width:90px"></label>
+        </div>
+        <div class="hint">自动识别语言后缀(chs/cht/zh/jp 等,Emby 友好)。备份到视频目录的 SubBackup/</div>
+      </div>
+
+      <!-- 调轴进度 -->
+      <div class="panel">
+        <div class="section-title">调轴进度</div>
+        <div id="syncStatus" style="display:none"></div>
+        <div class="hint" id="syncHint">ffsubsync 对齐时间轴,输出到视频目录</div>
+      </div>
+    </aside>
+
+    <section class="panel right">
+      <div class="toolbar" style="margin-bottom:8px">
+        <button class="btn green" onclick="doMatch()" id="matchBtn">一键匹配</button>
+        <span class="sub" id="matchHint">需先扫描视频或上传字幕</span>
+      </div>
+      <div class="table-wrap">
+        <div id="matchTable"><div class="empty">尚未匹配</div></div>
+      </div>
+    </section>
+  </div>
+
+</div>
+
+<div class="msg" id="msg"></div>
+
+<!-- 目录模态 -->
+<div class="modal-mask" id="dirModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>选择路径</h3>
+      <button class="modal-close" onclick="closeDirModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="sort-bar">
+        <span>排序:</span>
+        <button class="sort-btn" data-sort="name" onclick="setSort('name')">名称 <span id="nameArrow"></span></button>
+        <button class="sort-btn" data-sort="date" onclick="setSort('date')">日期 <span id="dateArrow"></span></button>
+        <input type="text" id="dirSearch" placeholder="搜索..." oninput="renderDirList()" style="margin-left:auto;min-width:120px;padding:3px 8px;font-size:11px">
+      </div>
+      <div class="dir-list" id="dirList"></div>
+    </div>
+    <div class="modal-footer">
+      <div class="path-display">当前: <span id="dirPath">/ (根)</span></div>
+      <div>
+        <button class="btn ghost" onclick="closeDirModal()">取消</button>
+        <button class="btn" onclick="confirmDir()">确认</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const state = { videos: [], subsMounted: [], subsUploaded: [], matches: [], syncTaskId: null };
+const browser = { current: '', sort: 'name', order: 'asc', dirs: [] };
+const $ = id => document.getElementById(id);
+
+function showMsg(text, ok=true) {
+  const m = $('msg'); m.textContent = text;
+  m.className = 'msg show ' + (ok ? 'ok' : 'err');
+  setTimeout(() => m.className = 'msg', 5000);
+}
+async function api(url, opts) {
+  const r = await fetch(url, opts);
+  if (!r.ok) { const t = await r.text(); throw new Error(t); }
+  return r.json();
+}
+
+// 目录模态
+async function openDirModal() { browser.current = $('dirInput').value.trim(); $('dirModal').classList.add('show'); await loadDirs(); }
+function closeDirModal() { $('dirModal').classList.remove('show'); }
+function confirmDir() { $('dirInput').value = browser.current; closeDirModal(); }
+async function loadDirs() {
+  try { browser.dirs = await api('/api/files/dirs' + (browser.current ? '?dir=' + encodeURIComponent(browser.current) : '')); renderDirList(); }
+  catch (e) { showMsg('读取目录失败:' + e.message, false); }
+}
+function renderDirList() {
+  let sorted = [...browser.dirs];
+  const q = ($('dirSearch')?.value || '').trim().toLowerCase();
+  if (q) sorted = sorted.filter(d => d.name.toLowerCase().includes(q));
+  const d = browser.order === 'desc' ? -1 : 1;
+  if (browser.sort === 'name') sorted.sort((a,b) => d * a.name.localeCompare(b.name, 'zh-Hans'));
+  else if (browser.sort === 'date') sorted.sort((a,b) => d * (new Date(a.lastModified) - new Date(b.lastModified)));
+  $('dirPath').textContent = browser.current ? '/' + browser.current : '/ (根)';
+  document.querySelectorAll('.sort-btn').forEach(b => {
+    const a = b.dataset.sort === browser.sort; b.classList.toggle('active', a);
+    const ar = $(b.dataset.sort + 'Arrow'); if (ar) ar.textContent = a ? (browser.order === 'asc' ? '↑' : '↓') : '';
+  });
+  let h = '';
+  if (browser.current && !q) h += '<div class="dir-row" onclick="goUpDir()"><span class="dir-icon">📁</span><span class="dir-name">..(上级)</span></div>';
+  if (!sorted.length) h += `<div class="empty">${q ? '无匹配' : '无子目录'}</div>`;
+  sorted.forEach(x => { h += `<div class="dir-row" onclick="enterDir('${x.path.replace(/'/g,"\\'")}')"><span class="dir-icon">📁</span><span class="dir-name">${x.name}</span><span class="dir-meta">${formatDate(x.lastModified)}</span></div>`; });
+  $('dirList').innerHTML = h;
+}
+function formatDate(dt) { const d = new Date(dt); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function enterDir(p) { browser.current = p; loadDirs(); }
+function goUpDir() { const p = browser.current.split('/'); p.pop(); browser.current = p.join('/'); loadDirs(); }
+function setSort(s) { if (browser.sort === s) browser.order = browser.order === 'asc' ? 'desc' : 'asc'; else { browser.sort = s; browser.order = s === 'date' ? 'desc' : 'asc'; } renderDirList(); }
+
+// 主流程
+async function scan() {
+  try {
+    const dir = $('dirInput').value.trim();
+    const data = await api('/api/files/scan' + (dir ? '?dir=' + encodeURIComponent(dir) : ''));
+    state.videos = data.videos; state.subsMounted = data.subtitles; state.matches = [];
+    render();
+    showMsg(`扫描完成:${data.videos.length} 视频,${data.subtitles.length} 字幕`);
+  } catch (e) { showMsg('扫描失败:' + e.message, false); }
+}
+async function upload(files) {
+  if (!files || !files.length) return;
+  try {
+    const fd = new FormData(); for (const f of files) fd.append('files', f);
+    const data = await api('/api/subtitles/upload', { method: 'POST', body: fd });
+    state.subsUploaded.push(...data); render();
+    showMsg(`上传成功:${data.length} 个`);
+  } catch (e) { showMsg('上传失败:' + e.message, false); }
+  $('fileInput').value = '';
+}
+async function doMatch() {
+  const vN = state.videos.map(v => v.filename);
+  const sN = [...state.subsMounted, ...state.subsUploaded].map(s => s.filename);
+  if (!vN.length || !sN.length) { showMsg('需要视频和字幕各至少 1 个', false); return; }
+  try {
+    $('matchBtn').disabled = true;
+    const data = await api('/api/match', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ videos: vN, subtitles: sN }) });
+    state.matches = data.items; render();
+    const m = state.matches.filter(x => x.video && x.subtitle).length;
+    showMsg(`匹配完成:${m} 项对应,共 ${state.matches.length} 项`);
+  } catch (e) { showMsg('匹配失败:' + e.message, false); }
+  finally { $('matchBtn').disabled = false; }
+}
+function pathMap() {
+  const m = {}; state.videos.forEach(v => m[v.filename] = v.path);
+  [...state.subsMounted, ...state.subsUploaded].forEach(s => m[s.filename] = s.path);
+  return m;
+}
+function roughPreview(video, subtitle) {
+  const vName = (video || '').replace(/\.[^.]+$/, '');
+  const subExt = (subtitle || '').match(/\.[^.]+$/)?.[0] || '';
+  return vName + subExt;
+}
+async function doRename() {
+  const pm = pathMap();
+  const items = state.matches.filter(m => m.video && m.subtitle).map(m => ({ key: m.key, video: pm[m.video] || m.video, subtitle: pm[m.subtitle] || m.subtitle }));
+  if (!items.length) { showMsg('没有可改名的匹配项', false); return; }
+  try {
+    $('renameBtn').disabled = true;
+    const data = await api('/api/rename', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ items, backup: $('backupChk').checked, langSuffix: $('langInput').value.trim() || null }) });
+    showMsg(`改名完成:成功 ${data.success},失败 ${data.failed}`, data.failed === 0);
+  } catch (e) { showMsg('改名失败:' + e.message, false); }
+  finally { $('renameBtn').disabled = false; }
+}
+async function doSync() {
+  const pm = pathMap();
+  const items = state.matches.filter(m => m.video && m.subtitle).map(m => ({ key: m.key, video: pm[m.video] || m.video, subtitle: pm[m.subtitle] || m.subtitle }));
+  if (!items.length) { showMsg('没有可调轴的匹配项', false); return; }
+  try {
+    $('syncBtn').disabled = true; $('syncStatus').style.display = 'block';
+    $('syncStatus').innerHTML = '<div class="sub">提交调轴任务...</div>';
+    const data = await api('/api/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ items }) });
+    state.syncTaskId = data.taskId; pollSync();
+  } catch (e) { showMsg('调轴启动失败:' + e.message, false); $('syncBtn').disabled = false; }
+}
+async function pollSync() {
+  if (!state.syncTaskId) return;
+  try {
+    const t = await api('/api/sync/' + state.syncTaskId + '/status');
+    const pct = t.total ? Math.round((t.done + t.progress) / t.total * 100) : 0;
+    const st = { queued: '排队中', running: '运行中', completed: '已完成' }[t.status] || t.status;
+    $('syncStatus').innerHTML = `<div><strong>${st}</strong> · ${t.done}/${t.total}(${pct}%)${t.currentVideo?' · '+t.currentVideo:''}</div><div class="progress-bar"><div style="width:${pct}%"></div></div><div class="sync-logs">${(t.logs||[]).slice(-5).map(l=>'<div>'+l+'</div>').join('')}</div>`;
+    if (t.status === 'running' || t.status === 'queued') setTimeout(pollSync, 1000);
+    else { showMsg(`调轴完成:${t.done}/${t.total}` + (t.error ? '(有失败)' : ''), !t.error); state.syncTaskId = null; $('syncBtn').disabled = !state.matches.some(m => m.video && m.subtitle); }
+  } catch (e) { showMsg('查询进度失败:' + e.message, false); $('syncBtn').disabled = false; state.syncTaskId = null; }
+}
+
+function render() {
+  $('vCount').textContent = state.videos.length;
+  $('sCount').textContent = state.subsMounted.length;
+  $('uCount').textContent = state.subsUploaded.length;
+  $('mCount').textContent = state.matches.filter(m => m.video && m.subtitle).length;
+
+  let fl = '';
+  state.videos.forEach(v => fl += `<div class="fi"><span class="tag video">V</span> ${v.filename}</div>`);
+  state.subsMounted.forEach(s => fl += `<div class="fi"><span class="tag sub">M</span> ${s.filename}</div>`);
+  state.subsUploaded.forEach(s => fl += `<div class="fi"><span class="tag upload">U</span> ${s.filename}</div>`);
+  $('fileList').innerHTML = fl || '<div class="empty" style="padding:20px">无文件</div>';
+
+  const matched = state.matches.filter(m => m.video && m.subtitle);
+  const unmatched = state.matches.filter(m => !(m.video && m.subtitle));
+  if (!state.matches.length) { $('matchTable').innerHTML = '<div class="empty">尚未匹配</div>'; }
+  else {
+    const groups = new Map();
+    matched.forEach(m => { if (!groups.has(m.video)) groups.set(m.video, []); groups.get(m.video).push(m); });
+    const subOpts = [...state.subsMounted, ...state.subsUploaded].map(s => `<option value="${s.filename}">${s.filename}</option>`).join('');
+    let h = '<table><thead><tr><th>集数</th><th>视频</th><th>字幕</th><th>改名预览</th></tr></thead><tbody>';
+    groups.forEach((items, video) => {
+      items.forEach((m, i) => {
+        const idx = state.matches.indexOf(m);
+        if (i === 0) h += `<tr><td rowspan="${items.length}">${m.key||'-'}</td><td class="filename" rowspan="${items.length}">${video}</td>`;
+        else h += '<tr>';
+        const prev = m._dirty ? roughPreview(m.video, m.subtitle) : (m.preview || '-');
+        h += `<td><select onchange="state.matches[${idx}].subtitle=this.value;state.matches[${idx}]._dirty=true;render()">${subOpts.replace(`value="${m.subtitle}"`, `value="${m.subtitle}" selected`)}</select></td>`;
+        h += `<td class="preview${m._dirty?' approx':''}">${prev}${m._dirty?' *':''}</td></tr>`;
+      });
+    });
+    unmatched.forEach(m => {
+      h += `<tr><td>${m.key||'-'}</td><td>${m.video||'<span class="tag unmatched">无视频</span>'}</td><td>${m.subtitle||'<span class="tag unmatched">无字幕</span>'}</td><td>-</td></tr>`;
+    });
+    h += '</tbody></table>';
+    $('matchTable').innerHTML = h;
+  }
+  $('renameBtn').disabled = !state.matches.some(m => m.video && m.subtitle);
+  $('syncBtn').disabled = !state.matches.some(m => m.video && m.subtitle) || !!state.syncTaskId;
+  $('matchHint').textContent = state.videos.length || state.subsUploaded.length ? '已就绪,点击匹配' : '需先扫描视频或上传字幕';
+}
+
+// 拖拽上传(文件列表区)
+const dh = $('dropHint');
+['dragover','dragenter'].forEach(ev => dh.addEventListener(ev, e => { e.preventDefault(); dh.classList.add('over'); }));
+['dragleave','drop'].forEach(ev => dh.addEventListener(ev, e => { e.preventDefault(); dh.classList.remove('over'); }));
+dh.addEventListener('drop', e => { if (e.dataTransfer.files.length) upload(e.dataTransfer.files); });
+
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+**/bin
+**/obj
+media
+uploads
+config
+.git
+.gitignore
+*.md
+.vs
+.vscode
