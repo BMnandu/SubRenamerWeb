@@ -20,8 +20,19 @@ public class SubtitlesController(UploadService uploadService) : ControllerBase
 
         sessionId ??= Guid.NewGuid().ToString("N")[..8];
         var results = new List<UploadResultDto>();
-        foreach (var f in files)
-            results.Add(await uploadService.SaveAsync(f, sessionId));
+        try
+        {
+            foreach (var f in files)
+                results.Add(await uploadService.SaveAsync(f, sessionId));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ErrorResponseDto(ex.Message));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponseDto(ex.Message));
+        }
 
         Response.Headers["X-Session-Id"] = sessionId;
         return Ok(results);

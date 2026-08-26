@@ -9,7 +9,7 @@ namespace SubRenamer.Web.Services;
 /// 字幕自动调轴服务:调用 ffsubsync(Python wrapper)对齐字幕时间轴。
 /// 异步任务管理,支持进度查询。
 /// </summary>
-public class SubSyncService(AppPaths paths)
+public class SubSyncService(SafePathService safePaths)
 {
     private readonly ConcurrentDictionary<string, SyncTask> _tasks = new();
     private static readonly string WrapperPath = Path.Combine(AppContext.BaseDirectory, "scripts", "sync_wrapper.py");
@@ -41,15 +41,13 @@ public class SubSyncService(AppPaths paths)
             if (string.IsNullOrEmpty(item.Video) || string.IsNullOrEmpty(item.Subtitle)) continue;
             try
             {
-                var video = Path.GetFullPath(item.Video);
-                var subtitle = Path.GetFullPath(item.Subtitle);
-                if (!IsPathSafe(video) || !IsPathSafe(subtitle))
-                    throw new UnauthorizedAccessException("路径越界");
+                var video = safePaths.EnsureMediaPath(item.Video);
+                var subtitle = safePaths.EnsureInputPath(item.Subtitle);
 
                 var videoDir = Path.GetDirectoryName(video) ?? "";
                 var videoNameNoExt = Path.GetFileNameWithoutExtension(video);
                 var subExt = Path.GetExtension(subtitle);
-                var output = Path.Combine(videoDir, $"{videoNameNoExt}{subExt}");
+                var output = safePaths.EnsureMediaPath(Path.Combine(videoDir, $"{videoNameNoExt}{subExt}"));
 
                 task.CurrentVideo = Path.GetFileName(video);
                 task.Logs.Add($"[{DateTime.Now:HH:mm:ss}] 开始调轴:{task.CurrentVideo}");
@@ -110,8 +108,4 @@ public class SubSyncService(AppPaths paths)
         if (proc.ExitCode != 0)
             throw new Exception($"ffsubsync 退出码 {proc.ExitCode}");
     }
-
-    private bool IsPathSafe(string path) =>
-        path.StartsWith(paths.MediaDir, StringComparison.Ordinal)
-        || path.StartsWith(paths.UploadDir, StringComparison.Ordinal);
 }

@@ -19,6 +19,7 @@ builder.Services.AddSingleton(new AppPaths(
 ));
 
 builder.Services.AddSingleton<FileScanService>();
+builder.Services.AddSingleton<SafePathService>();
 builder.Services.AddSingleton<RenameService>();
 builder.Services.AddSingleton<UploadService>();
 builder.Services.AddSingleton<SubSyncService>();
