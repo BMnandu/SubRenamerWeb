@@ -110,9 +110,13 @@ id
 基础功能需要 .NET 8 SDK：
 
 ```bash
-dotnet restore src/SubRenamer.Web/SubRenamer.Web.csproj
+dotnet restore SubRenamer.Web.sln
+dotnet build SubRenamer.Web.sln -c Release --no-restore
+dotnet test SubRenamer.Web.sln -c Release --no-build
 dotnet run --project src/SubRenamer.Web/SubRenamer.Web.csproj
 ```
+
+开发工作请从独立分支发起，并通过 Pull Request 和 CI 合并。分支、提交、测试及发布门禁参见 [参与开发](CONTRIBUTING.md) 和 [开发与交付流程](docs/开发与交付流程.md)。
 
 如果需要在非 Docker 环境测试调轴，还需安装：
 
@@ -133,6 +137,7 @@ dotnet run --project src/SubRenamer.Web/SubRenamer.Web.csproj
 ```text
 SubRenamer.Web/
 ├── .github/workflows/         # AMD64/ARM64 镜像发布流水线
+├── docs/                      # 开发、API 与迁移文档
 ├── src/
 │   ├── SubRenamer.Core/       # 原项目核心匹配算法（零修改）
 │   └── SubRenamer.Web/        # ASP.NET Core Web API + 单页前端
@@ -141,6 +146,8 @@ SubRenamer.Web/
 │       ├── Services/          # 文件、改名和调轴服务
 │       ├── scripts/           # FFsubsync Python 包装程序
 │       └── wwwroot/           # WebUI
+├── tests/                     # 单元、集成与端到端测试
+├── SubRenamer.Web.sln         # 本地开发与 CI 统一入口
 ├── Dockerfile
 ├── docker-compose.yml
 └── README.md
