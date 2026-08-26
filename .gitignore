@@ -8,3 +8,10 @@ config/
 *.DotSettings.user
 .idea/
 publish/
+TestResults/
+coverage/
+*.trx
+.DS_Store
+.env
+.env.*
+!.env.example

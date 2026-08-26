@@ -1,0 +1,30 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SubRenamer.Core", "src\SubRenamer.Core\SubRenamer.Core.csproj", "{7B1AB914-F169-44F3-A55F-0D460B6DF742}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SubRenamer.Web", "src\SubRenamer.Web\SubRenamer.Web.csproj", "{ED5BB7CA-EC91-4056-8378-6BE9343EB5E9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SubRenamer.Web.Tests", "tests\SubRenamer.Web.Tests\SubRenamer.Web.Tests.csproj", "{DA3EFA23-B854-48A7-97D6-C939872658E0}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7B1AB914-F169-44F3-A55F-0D460B6DF742}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7B1AB914-F169-44F3-A55F-0D460B6DF742}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7B1AB914-F169-44F3-A55F-0D460B6DF742}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7B1AB914-F169-44F3-A55F-0D460B6DF742}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ED5BB7CA-EC91-4056-8378-6BE9343EB5E9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ED5BB7CA-EC91-4056-8378-6BE9343EB5E9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ED5BB7CA-EC91-4056-8378-6BE9343EB5E9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ED5BB7CA-EC91-4056-8378-6BE9343EB5E9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DA3EFA23-B854-48A7-97D6-C939872658E0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DA3EFA23-B854-48A7-97D6-C939872658E0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DA3EFA23-B854-48A7-97D6-C939872658E0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DA3EFA23-B854-48A7-97D6-C939872658E0}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
