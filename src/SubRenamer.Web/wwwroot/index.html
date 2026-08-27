@@ -148,6 +148,7 @@
       <div class="panel">
         <div class="section-title">调轴进度</div>
         <div id="syncStatus" style="display:none"></div>
+        <label class="hint"><input type="checkbox" id="overwriteCommit"> 提交时允许覆盖（覆盖前自动备份）</label>
         <div class="hint" id="syncHint">调轴结果先写入独立 staging，不会直接修改媒体目录</div>
       </div>
     </aside>
@@ -194,7 +195,7 @@
 </div>
 
 <script>
-const state = { videos: [], subsMounted: [], subsUploaded: [], matches: [], syncTaskId: null };
+const state = { videos: [], subsMounted: [], subsUploaded: [], matches: [], syncTaskId: null, syncActive: false };
 const browser = { current: '', sort: 'name', order: 'asc', dirs: [] };
 const $ = id => document.getElementById(id);
 
@@ -305,7 +306,7 @@ async function doSync() {
     $('syncBtn').disabled = true; $('syncStatus').style.display = 'block';
     $('syncStatus').innerHTML = '<div class="sub">提交调轴任务...</div>';
     const data = await api('/api/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ items, defaultMode: $('syncMode').value }) });
-    state.syncTaskId = data.taskId; pollSync();
+    state.syncTaskId = data.taskId; state.syncActive = true; pollSync();
   } catch (e) { showMsg('调轴启动失败:' + e.message, false); $('syncBtn').disabled = false; }
 }
 async function pollSync() {
@@ -314,22 +315,45 @@ async function pollSync() {
     const t = await api('/api/sync/' + state.syncTaskId + '/status');
     const progress = (t.items || []).reduce((sum, item) => sum + (item.progress || 0), 0);
     const pct = t.total ? Math.round(progress / t.total * 100) : 0;
-    const st = { queued: '排队中', running: '运行中', awaiting_commit: '等待提交', completed_with_errors: '部分完成', failed: '失败', cancelled: '已取消', timed_out: '已超时' }[t.status] || t.status;
+    const st = { queued: '排队中', running: '运行中', awaiting_commit: '等待提交', completed: '已提交', completed_with_errors: '部分完成', failed: '失败', cancelled: '已取消', timed_out: '已超时' }[t.status] || t.status;
     const running = (t.items || []).find(item => item.status === 'running');
     const itemRows = (t.items || []).map(item => {
       const detail = item.error || (item.qualityReasons || []).join('；') || item.candidateFileName || '';
       return `<div>${escapeHtml(item.key || item.itemId)} · ${escapeHtml(item.status)}${detail ? ' · ' + escapeHtml(detail) : ''}</div>`;
     }).join('');
+    const canCommit = (t.items || []).some(item => item.status === 'succeeded' || item.status === 'rolled_back');
+    const canRollback = (t.items || []).some(item => item.status === 'committed');
     const cancelButton = (t.status === 'running' || t.status === 'queued') ? ' <button class="btn ghost" onclick="cancelSync()">取消任务</button>' : '';
-    $('syncStatus').innerHTML = `<div><strong>${escapeHtml(st)}</strong> · ${t.completed}/${t.total}(${pct}%)${running?' · '+escapeHtml(running.candidateFileName):''}${cancelButton}</div><div class="progress-bar"><div style="width:${pct}%"></div></div><div class="sync-logs">${itemRows}${(t.logs||[]).slice(-5).map(l=>'<div>'+escapeHtml(l)+'</div>').join('')}</div>`;
+    const commitButton = canCommit ? ' <button class="btn green" onclick="commitSync()">提交到媒体目录</button>' : '';
+    const rollbackButton = canRollback ? ' <button class="btn ghost" onclick="rollbackSync()">回滚提交</button>' : '';
+    $('syncStatus').innerHTML = `<div><strong>${escapeHtml(st)}</strong> · ${t.completed}/${t.total}(${pct}%)${running?' · '+escapeHtml(running.candidateFileName):''}${cancelButton}${commitButton}${rollbackButton}</div><div class="progress-bar"><div style="width:${pct}%"></div></div><div class="sync-logs">${itemRows}${(t.logs||[]).slice(-5).map(l=>'<div>'+escapeHtml(l)+'</div>').join('')}</div>`;
     if (t.status === 'running' || t.status === 'queued') setTimeout(pollSync, 1000);
-    else { const ok = t.status === 'awaiting_commit'; showMsg(`调轴任务结束:${t.completed}/${t.total}，${st}`, ok); state.syncTaskId = null; $('syncBtn').disabled = !state.matches.some(m => m.video && m.subtitle); }
-  } catch (e) { showMsg('查询进度失败:' + e.message, false); $('syncBtn').disabled = false; state.syncTaskId = null; }
+    else { state.syncActive = false; const ok = t.status === 'awaiting_commit' || t.status === 'completed'; showMsg(`调轴任务状态:${t.completed}/${t.total}，${st}`, ok); $('syncBtn').disabled = !state.matches.some(m => m.video && m.subtitle); }
+  } catch (e) { showMsg('查询进度失败:' + e.message, false); $('syncBtn').disabled = false; state.syncActive = false; }
 }
 async function cancelSync() {
   if (!state.syncTaskId) return;
   try { await api('/api/sync/' + state.syncTaskId + '/cancel', { method: 'POST' }); showMsg('已提交取消请求'); }
   catch (e) { showMsg('取消失败:' + e.message, false); }
+}
+async function runSyncMutation(action, body) {
+  if (!state.syncTaskId) return;
+  try {
+    const response = await fetch(`/api/sync/${state.syncTaskId}/${action}`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: body ? JSON.stringify(body) : null });
+    const result = await response.json();
+    if (!response.ok && response.status !== 409) throw new Error(result.error || JSON.stringify(result));
+    showMsg(`${action === 'commit' ? '提交' : '回滚'}完成:成功 ${result.succeeded || 0},冲突 ${result.conflicts || 0},失败 ${result.failed || 0}`, response.ok);
+    await pollSync();
+  } catch (e) { showMsg(`${action === 'commit' ? '提交' : '回滚'}失败:` + e.message, false); }
+}
+async function commitSync() {
+  const allowOverwrite = $('overwriteCommit').checked;
+  if (allowOverwrite && !confirm('目标存在时将先备份再覆盖，是否继续？')) return;
+  await runSyncMutation('commit', { allowOverwrite });
+}
+async function rollbackSync() {
+  if (!confirm('仅回滚本任务已提交且未被外部修改的字幕，是否继续？')) return;
+  await runSyncMutation('rollback');
 }
 
 function render() {
@@ -369,7 +393,7 @@ function render() {
     $('matchTable').innerHTML = h;
   }
   $('renameBtn').disabled = !state.matches.some(m => m.video && m.subtitle);
-  $('syncBtn').disabled = !state.matches.some(m => m.video && m.subtitle) || !!state.syncTaskId;
+  $('syncBtn').disabled = !state.matches.some(m => m.video && m.subtitle) || state.syncActive;
   $('matchHint').textContent = state.videos.length || state.subsUploaded.length ? '已就绪,点击匹配' : '需先扫描视频或上传字幕';
 }
 

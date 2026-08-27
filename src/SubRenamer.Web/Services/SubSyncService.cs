@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Channels;
@@ -95,6 +96,208 @@ public sealed class SubSyncService : IAsyncDisposable
 
         task.RequestCancellation();
         return task.Snapshot();
+    }
+
+    public async Task<SyncFileOperationResponseDto?> CommitTaskAsync(
+        string taskId,
+        SyncCommitRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        if (!_tasks.TryGetValue(taskId, out var task))
+            return null;
+
+        await task.MutationLock.WaitAsync(cancellationToken);
+        try
+        {
+            EnsureTaskCanMutateFiles(task);
+            var results = new List<SyncFileOperationItemDto>();
+            foreach (var item in task.Items)
+            {
+                results.Add(await CommitItemAsync(task, item, request.AllowOverwrite, cancellationToken));
+                task.RefreshCommitStatus();
+                TryWriteManifest(task);
+            }
+
+            task.RefreshCommitStatus();
+            task.AddLog($"提交处理完成：成功 {CountSucceeded(results)}，冲突 {CountConflicts(results)}");
+            TryWriteManifest(task);
+            return CreateFileOperationResponse(task, results);
+        }
+        finally
+        {
+            task.MutationLock.Release();
+        }
+    }
+
+    public async Task<SyncFileOperationResponseDto?> RollbackTaskAsync(
+        string taskId,
+        CancellationToken cancellationToken)
+    {
+        if (!_tasks.TryGetValue(taskId, out var task))
+            return null;
+
+        await task.MutationLock.WaitAsync(cancellationToken);
+        try
+        {
+            EnsureTaskCanMutateFiles(task);
+            var results = new List<SyncFileOperationItemDto>();
+            foreach (var item in task.Items)
+            {
+                results.Add(await RollbackItemAsync(task, item, cancellationToken));
+                task.RefreshCommitStatus();
+                TryWriteManifest(task);
+            }
+
+            task.RefreshCommitStatus();
+            task.AddLog($"回滚处理完成：成功 {CountSucceeded(results)}，冲突 {CountConflicts(results)}");
+            TryWriteManifest(task);
+            return CreateFileOperationResponse(task, results);
+        }
+        finally
+        {
+            task.MutationLock.Release();
+        }
+    }
+
+    private async Task<SyncFileOperationItemDto> CommitItemAsync(
+        SyncTaskState task,
+        SyncTaskItemState item,
+        bool allowOverwrite,
+        CancellationToken cancellationToken)
+    {
+        string? temporaryTarget = null;
+        var temporaryTargetCreated = false;
+        if (item.Status == SyncTaskItemStatus.Committed)
+        {
+            return item.TargetPath is not null
+                && File.Exists(item.TargetPath)
+                && item.CommittedHash is not null
+                && await ComputeHashAsync(item.TargetPath, cancellationToken) == item.CommittedHash
+                    ? OperationResult(item, SyncFileOperationStatus.AlreadyCommitted)
+                    : OperationResult(item, SyncFileOperationStatus.Conflict, "已提交目标已被移动、删除或修改");
+        }
+        if (item.Status is not SyncTaskItemStatus.Succeeded and not SyncTaskItemStatus.RolledBack)
+            return OperationResult(item, SyncFileOperationStatus.Skipped, "仅 succeeded 或 rolled_back 项可提交");
+
+        try
+        {
+            var stagingOutput = _safePaths.EnsureWorkPath(item.StagingOutput);
+            var targetPath = _safePaths.EnsureMediaPath(
+                item.TargetPath ?? throw new InvalidOperationException("计划项缺少目标路径"));
+            ValidateOutput(stagingOutput);
+            var stagingHash = await ComputeHashAsync(stagingOutput, cancellationToken);
+            var targetExisted = File.Exists(targetPath);
+            string? backupPath = null;
+            string? originalTargetHash = null;
+
+            if (targetExisted && !allowOverwrite)
+                return OperationResult(item, SyncFileOperationStatus.Conflict, "目标文件已存在，默认不覆盖");
+
+            if (targetExisted)
+            {
+                originalTargetHash = await ComputeHashAsync(targetPath, cancellationToken);
+                backupPath = _safePaths.EnsureWorkPath(Path.Combine(
+                    task.TaskDirectory,
+                    "backup",
+                    item.CandidateFileName ?? throw new InvalidOperationException("计划项缺少候选文件名")));
+                await CopyFileAtomicallyAsync(
+                    targetPath,
+                    backupPath,
+                    overwrite: true,
+                    originalTargetHash,
+                    cancellationToken);
+            }
+
+            var targetDirectory = Path.GetDirectoryName(targetPath)
+                ?? throw new InvalidOperationException("无法确定目标目录");
+            temporaryTarget = _safePaths.EnsureMediaPath(Path.Combine(
+                targetDirectory,
+                $".{Path.GetFileName(targetPath)}.subrenamer-{task.TaskId}-{Guid.NewGuid():N}.tmp"));
+            await CopyFileAsync(stagingOutput, temporaryTarget, cancellationToken);
+            temporaryTargetCreated = true;
+            if (await ComputeHashAsync(temporaryTarget, cancellationToken) != stagingHash)
+                throw new InvalidOperationException("staging 在提交复制期间发生变化");
+
+            if (targetExisted
+                && (originalTargetHash is null
+                    || !File.Exists(targetPath)
+                    || await ComputeHashAsync(targetPath, cancellationToken) != originalTargetHash))
+            {
+                DeleteIfExists(temporaryTarget);
+                temporaryTargetCreated = false;
+                return OperationResult(item, SyncFileOperationStatus.Conflict, "备份后目标文件发生变化，已停止覆盖");
+            }
+
+            File.Move(temporaryTarget, targetPath, overwrite: targetExisted);
+            temporaryTargetCreated = false;
+            item.MarkCommitted(stagingHash, targetExisted, backupPath, originalTargetHash);
+            task.AddLog($"已提交 {item.CandidateFileName}");
+            return OperationResult(item, SyncFileOperationStatus.Committed);
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException or UnauthorizedAccessException)
+        {
+            if (temporaryTargetCreated && temporaryTarget is not null)
+                DeleteIfExists(temporaryTarget);
+            return OperationResult(item, SyncFileOperationStatus.Failed, ex.Message);
+        }
+    }
+
+    private async Task<SyncFileOperationItemDto> RollbackItemAsync(
+        SyncTaskState task,
+        SyncTaskItemState item,
+        CancellationToken cancellationToken)
+    {
+        if (item.Status == SyncTaskItemStatus.RolledBack)
+            return OperationResult(item, SyncFileOperationStatus.AlreadyRolledBack);
+        if (item.Status != SyncTaskItemStatus.Committed)
+            return OperationResult(item, SyncFileOperationStatus.Skipped, "仅 committed 项可回滚");
+
+        try
+        {
+            var targetPath = _safePaths.EnsureMediaPath(
+                item.TargetPath ?? throw new InvalidOperationException("计划项缺少目标路径"));
+            if (!File.Exists(targetPath)
+                || item.CommittedHash is null
+                || await ComputeHashAsync(targetPath, cancellationToken) != item.CommittedHash)
+            {
+                return OperationResult(item, SyncFileOperationStatus.Conflict, "正式目标已被移动、删除或修改，拒绝回滚");
+            }
+
+            if (item.TargetExistedBeforeCommit == true)
+            {
+                if (string.IsNullOrWhiteSpace(item.BackupPath)
+                    || string.IsNullOrWhiteSpace(item.OriginalTargetHash))
+                {
+                    return OperationResult(item, SyncFileOperationStatus.Failed, "覆盖提交缺少备份元数据");
+                }
+
+                var backupPath = _safePaths.EnsureWorkPath(item.BackupPath);
+                if (!File.Exists(backupPath)
+                    || await ComputeHashAsync(backupPath, cancellationToken) != item.OriginalTargetHash)
+                {
+                    return OperationResult(item, SyncFileOperationStatus.Conflict, "备份文件缺失或已被修改");
+                }
+
+                await CopyFileAtomicallyAsync(
+                    backupPath,
+                    targetPath,
+                    overwrite: true,
+                    item.OriginalTargetHash,
+                    cancellationToken);
+            }
+            else
+            {
+                File.Delete(targetPath);
+            }
+
+            item.MarkRolledBack();
+            task.AddLog($"已回滚 {item.CandidateFileName}");
+            return OperationResult(item, SyncFileOperationStatus.RolledBack);
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException or UnauthorizedAccessException)
+        {
+            return OperationResult(item, SyncFileOperationStatus.Failed, ex.Message);
+        }
     }
 
     private async Task ProcessQueueAsync()
@@ -284,6 +487,106 @@ public sealed class SubSyncService : IAsyncDisposable
         await output.FlushAsync(cancellationToken);
     }
 
+    private async Task CopyFileAtomicallyAsync(
+        string source,
+        string destination,
+        bool overwrite,
+        string expectedHash,
+        CancellationToken cancellationToken)
+    {
+        var temporaryDestination = EnsureTransactionPath($"{destination}.tmp-{Guid.NewGuid():N}");
+        var temporaryCreated = false;
+        try
+        {
+            await CopyFileAsync(source, temporaryDestination, cancellationToken);
+            temporaryCreated = true;
+            if (await ComputeHashAsync(temporaryDestination, cancellationToken) != expectedHash)
+                throw new InvalidOperationException("事务复制后的文件哈希不一致");
+            File.Move(temporaryDestination, destination, overwrite);
+            temporaryCreated = false;
+        }
+        finally
+        {
+            if (temporaryCreated)
+                DeleteIfExists(temporaryDestination);
+        }
+    }
+
+    private static async Task CopyFileAsync(
+        string source,
+        string destination,
+        CancellationToken cancellationToken)
+    {
+        var destinationCreated = false;
+        try
+        {
+            await using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read);
+            await using var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            destinationCreated = true;
+            await input.CopyToAsync(output, cancellationToken);
+            await output.FlushAsync(cancellationToken);
+            output.Flush(flushToDisk: true);
+        }
+        catch
+        {
+            if (destinationCreated)
+                DeleteIfExists(destination);
+            throw;
+        }
+    }
+
+    private string EnsureTransactionPath(string path)
+    {
+        try
+        {
+            return _safePaths.EnsureWorkPath(path);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return _safePaths.EnsureMediaPath(path);
+        }
+    }
+
+    private static async Task<string> ComputeHashAsync(string path, CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var hash = await SHA256.HashDataAsync(stream, cancellationToken);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static void EnsureTaskCanMutateFiles(SyncTaskState task)
+    {
+        if (task.Status is SyncTaskStatus.Queued or SyncTaskStatus.Running)
+            throw new SyncTaskNotReadyException("任务尚未执行完成，不能提交或回滚");
+    }
+
+    private static SyncFileOperationItemDto OperationResult(
+        SyncTaskItemState item,
+        SyncFileOperationStatus status,
+        string? error = null) =>
+        new(item.ItemId, status, item.TargetPath, item.BackupPath, error);
+
+    private static int CountSucceeded(IEnumerable<SyncFileOperationItemDto> items) =>
+        items.Count(item => item.Status is
+            SyncFileOperationStatus.Committed or
+            SyncFileOperationStatus.AlreadyCommitted or
+            SyncFileOperationStatus.RolledBack or
+            SyncFileOperationStatus.AlreadyRolledBack);
+
+    private static int CountConflicts(IEnumerable<SyncFileOperationItemDto> items) =>
+        items.Count(item => item.Status == SyncFileOperationStatus.Conflict);
+
+    private static SyncFileOperationResponseDto CreateFileOperationResponse(
+        SyncTaskState task,
+        List<SyncFileOperationItemDto> items) =>
+        new(
+            task.TaskId,
+            task.Status,
+            CountSucceeded(items),
+            CountConflicts(items),
+            items.Count(item => item.Status == SyncFileOperationStatus.Failed),
+            items);
+
     private static void ValidateOutput(string output)
     {
         if (!File.Exists(output) || new FileInfo(output).Length == 0)
@@ -404,6 +707,7 @@ public sealed class SubSyncService : IAsyncDisposable
 }
 
 public sealed class SyncQueueFullException(string message) : Exception(message);
+public sealed class SyncTaskNotReadyException(string message) : Exception(message);
 
 internal sealed class SyncTaskState
 {
@@ -431,6 +735,7 @@ internal sealed class SyncTaskState
     public SyncExecutionOptionsDto Options { get; }
     public List<SyncTaskItemState> Items { get; }
     public CancellationTokenSource Cancellation { get; } = new();
+    public SemaphoreSlim MutationLock { get; } = new(1, 1);
     public SyncTaskStatus Status { get; private set; } = SyncTaskStatus.Queued;
     public DateTimeOffset CreatedAt { get; }
     public DateTimeOffset? StartedAt { get; private set; }
@@ -460,6 +765,27 @@ internal sealed class SyncTaskState
         {
             FinishedAt = DateTimeOffset.UtcNow;
             Status = DetermineFinalStatus();
+        }
+    }
+
+    public void RefreshCommitStatus()
+    {
+        lock (_gate)
+        {
+            var statuses = Items.Select(item => item.Status).ToList();
+            var hasExecutionErrors = statuses.Any(status => status is
+                SyncTaskItemStatus.RejectedLowQuality or
+                SyncTaskItemStatus.Failed or
+                SyncTaskItemStatus.Cancelled or
+                SyncTaskItemStatus.TimedOut);
+            var hasPendingCommit = statuses.Any(status => status is
+                SyncTaskItemStatus.Succeeded or
+                SyncTaskItemStatus.RolledBack);
+
+            if (hasPendingCommit)
+                Status = hasExecutionErrors ? SyncTaskStatus.CompletedWithErrors : SyncTaskStatus.AwaitingCommit;
+            else if (statuses.Any(status => status == SyncTaskItemStatus.Committed))
+                Status = hasExecutionErrors ? SyncTaskStatus.CompletedWithErrors : SyncTaskStatus.Completed;
         }
     }
 
@@ -553,6 +879,12 @@ internal sealed class SyncTaskItemState
     public string? Error { get; private set; }
     public DateTimeOffset? StartedAt { get; private set; }
     public DateTimeOffset? FinishedAt { get; private set; }
+    public bool? TargetExistedBeforeCommit { get; private set; }
+    public string? BackupPath { get; private set; }
+    public string? CommittedHash { get; private set; }
+    public string? OriginalTargetHash { get; private set; }
+    public DateTimeOffset? CommittedAt { get; private set; }
+    public DateTimeOffset? RolledBackAt { get; private set; }
 
     public static SyncTaskItemState Invalid(
         string itemId,
@@ -621,6 +953,35 @@ internal sealed class SyncTaskItemState
     public void Timeout(string error) =>
         Finish(SyncTaskItemStatus.TimedOut, null, null, SyncQualityStatus.NotEvaluated, [], error);
 
+    public void MarkCommitted(
+        string committedHash,
+        bool targetExistedBeforeCommit,
+        string? backupPath,
+        string? originalTargetHash)
+    {
+        lock (_gate)
+        {
+            Status = SyncTaskItemStatus.Committed;
+            TargetExistedBeforeCommit = targetExistedBeforeCommit;
+            BackupPath = backupPath;
+            CommittedHash = committedHash;
+            OriginalTargetHash = originalTargetHash;
+            CommittedAt = DateTimeOffset.UtcNow;
+            RolledBackAt = null;
+            Error = null;
+        }
+    }
+
+    public void MarkRolledBack()
+    {
+        lock (_gate)
+        {
+            Status = SyncTaskItemStatus.RolledBack;
+            RolledBackAt = DateTimeOffset.UtcNow;
+            Error = null;
+        }
+    }
+
     public SyncTaskItemResultDto Snapshot()
     {
         lock (_gate)
@@ -643,7 +1004,13 @@ internal sealed class SyncTaskItemState
                 [.. QualityReasons],
                 Error,
                 StartedAt,
-                FinishedAt);
+                FinishedAt,
+                TargetExistedBeforeCommit,
+                BackupPath,
+                CommittedHash,
+                OriginalTargetHash,
+                CommittedAt,
+                RolledBackAt);
         }
     }
 

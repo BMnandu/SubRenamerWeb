@@ -33,7 +33,7 @@ docker run -d \
 
 浏览器访问 `http://宿主机IP:38080`。
 
-> 媒体目录需要可写权限，因为旧改名接口会写入视频所在目录。安全调轴任务只写 `/work` staging；后续显式提交接口才会写媒体目录。
+> 媒体目录需要可写权限，因为旧改名接口和显式 `commit` 会写入视频所在目录。调轴执行阶段只写 `/work` staging。
 
 ## Docker Compose
 
@@ -68,6 +68,7 @@ docker compose up -d --build
 4. **微调**：在结果表格中手动修正匹配关系，必要时填写附加语言后缀
 5. **改名**：执行字幕改名；上传字幕会复制到视频目录，挂载字幕会在原目录改名
 6. **调轴**：选择全局、分段或 `no_sync` 模式，在独立 staging 中执行并查看逐项结果
+7. **提交或回滚**：通过质量门禁后显式提交；需要覆盖时勾选“允许覆盖”，系统会先备份旧字幕
 
 ### 调轴说明
 
@@ -80,11 +81,14 @@ docker compose up -d --build
 - 支持 `video_global`、实验性 `video_split`、`subtitle_reference` 和 `no_sync`
 - 支持队列上限、并发上限、单项超时、取消和过期 staging 清理
 - 单个项目失败后继续处理下一项，不会删除上传字幕或修改正式字幕
+- `commit` 默认拒绝已存在目标；显式允许覆盖时，旧文件先备份到任务 `backup/`
+- `rollback` 会校验当前目标哈希，只处理本任务提交且未被外部修改的文件
+- staging 和备份默认保留，使重复 `commit` / `rollback` 返回明确的幂等结果
 - Docker 镜像已内置 Python 3、FFsubsync 和 FFmpeg，无需额外安装
 
 调轴依赖视频中存在可分析的音轨。处理大文件时需要一定 CPU、内存和临时存储空间，ARM 设备耗时通常更长。
 
-当前阶段任务成功后状态为 `awaiting_commit`，表示候选结果已经通过校验但仍位于 staging。正式 `commit` / `rollback` API 将在下一阶段提供；不要把 PR 合并或镜像发布理解为 NAS 已部署。
+任务成功后状态为 `awaiting_commit`，表示候选结果仍位于 staging。全部候选提交后状态为 `completed`；回滚后重新回到 `awaiting_commit`。PR 合并或镜像发布不代表 NAS 已部署。
 
 ## 文件权限
 
@@ -111,6 +115,8 @@ id
 | POST | `/api/sync`、`/api/sync/tasks` | 创建 staging 调轴任务，返回 `taskId` |
 | GET | `/api/sync/{taskId}/status`、`/api/sync/tasks/{taskId}` | 查询总体状态、逐项指标和有限日志 |
 | POST | `/api/sync/{taskId}/cancel`、`/api/sync/tasks/{taskId}/cancel` | 取消排队中或执行中的任务 |
+| POST | `/api/sync/{taskId}/commit`、`/api/sync/tasks/{taskId}/commit` | 提交通过质量门禁的候选结果；默认不覆盖 |
+| POST | `/api/sync/{taskId}/rollback`、`/api/sync/tasks/{taskId}/rollback` | 回滚本任务已提交且未被外部修改的文件 |
 | POST | `/api/sync/plans` | 创建纯预览调轴计划，返回唯一目标名称与逐项校验结果 |
 
 `/api/sync/plans` 不会写入媒体目录。它支持 `subtitle_reference`、`video_global`、`video_split` 和 `no_sync` 模式；未识别语言使用稳定的 `und` 后缀，同一视频的多个字幕会生成互不冲突的候选文件名。

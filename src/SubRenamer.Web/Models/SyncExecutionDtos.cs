@@ -5,6 +5,7 @@ public enum SyncTaskStatus
     Queued,
     Running,
     AwaitingCommit,
+    Completed,
     CompletedWithErrors,
     Failed,
     Cancelled,
@@ -19,7 +20,9 @@ public enum SyncTaskItemStatus
     RejectedLowQuality,
     Failed,
     Cancelled,
-    TimedOut
+    TimedOut,
+    Committed,
+    RolledBack
 }
 
 public enum SyncQualityStatus
@@ -66,7 +69,13 @@ public record SyncTaskItemResultDto(
     List<string> QualityReasons,
     string? Error,
     DateTimeOffset? StartedAt,
-    DateTimeOffset? FinishedAt
+    DateTimeOffset? FinishedAt,
+    bool? TargetExistedBeforeCommit,
+    string? BackupPath,
+    string? CommittedHash,
+    string? OriginalTargetHash,
+    DateTimeOffset? CommittedAt,
+    DateTimeOffset? RolledBackAt
 );
 
 public record SyncTaskDto(
@@ -79,4 +88,34 @@ public record SyncTaskDto(
     DateTimeOffset? FinishedAt,
     List<SyncTaskItemResultDto> Items,
     List<string> Logs
+);
+
+public enum SyncFileOperationStatus
+{
+    Committed,
+    AlreadyCommitted,
+    RolledBack,
+    AlreadyRolledBack,
+    Conflict,
+    Skipped,
+    Failed
+}
+
+public record SyncCommitRequestDto(bool AllowOverwrite = false);
+
+public record SyncFileOperationItemDto(
+    string ItemId,
+    SyncFileOperationStatus Status,
+    string? TargetPath,
+    string? BackupPath,
+    string? Error
+);
+
+public record SyncFileOperationResponseDto(
+    string TaskId,
+    SyncTaskStatus TaskStatus,
+    int Succeeded,
+    int Conflicts,
+    int Failed,
+    List<SyncFileOperationItemDto> Items
 );
