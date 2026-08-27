@@ -47,4 +47,48 @@ public class SyncController(SubSyncService syncService) : ControllerBase
         var task = syncService.CancelTask(taskId);
         return task == null ? NotFound(new ErrorResponseDto("任务不存在")) : Accepted(task);
     }
+
+    /// <summary>把通过质量门禁的 staging 候选结果显式提交到媒体目录</summary>
+    [HttpPost("{taskId}/commit")]
+    [HttpPost("tasks/{taskId}/commit")]
+    public async Task<ActionResult<SyncFileOperationResponseDto>> Commit(
+        string taskId,
+        [FromBody] SyncCommitRequestDto? request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await syncService.CommitTaskAsync(
+                taskId,
+                request ?? new SyncCommitRequestDto(),
+                cancellationToken);
+            if (result is null)
+                return NotFound(new ErrorResponseDto("任务不存在"));
+            return result.Conflicts > 0 ? Conflict(result) : Ok(result);
+        }
+        catch (SyncTaskNotReadyException ex)
+        {
+            return Conflict(new ErrorResponseDto(ex.Message));
+        }
+    }
+
+    /// <summary>回滚本任务已经提交且内容未被外部修改的正式字幕</summary>
+    [HttpPost("{taskId}/rollback")]
+    [HttpPost("tasks/{taskId}/rollback")]
+    public async Task<ActionResult<SyncFileOperationResponseDto>> Rollback(
+        string taskId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await syncService.RollbackTaskAsync(taskId, cancellationToken);
+            if (result is null)
+                return NotFound(new ErrorResponseDto("任务不存在"));
+            return result.Conflicts > 0 ? Conflict(result) : Ok(result);
+        }
+        catch (SyncTaskNotReadyException ex)
+        {
+            return Conflict(new ErrorResponseDto(ex.Message));
+        }
+    }
 }
