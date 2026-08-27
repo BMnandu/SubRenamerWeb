@@ -13,21 +13,27 @@ RUN dotnet publish SubRenamer.Web/SubRenamer.Web.csproj -c Release -o /app/publi
 
 # ---- 运行阶段 ----
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
+ARG FFSUBSYNC_VERSION=0.5.1
 WORKDIR /app
 
 # 先装系统依赖(不依赖 build 产物,缓存稳定;改代码不会重新装这一层)
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg python3 python3-pip \
-    && pip3 install --no-cache-dir --break-system-packages ffsubsync \
+    && pip3 install --no-cache-dir --break-system-packages "ffsubsync==${FFSUBSYNC_VERSION}" \
     && rm -rf /var/lib/apt/lists/*
 
 # 再 COPY build 产物(代码变只重新跑这层 + chmod,不触发 apt 重装)
 COPY --from=build /app/publish .
 
 # 确保所有运行用户(UID 由 compose 控制)都能读取应用文件(NAS 源文件权限可能较严)
-RUN chmod -R a+rX /app && mkdir -p /media /uploads /config
+RUN chmod -R a+rX /app && mkdir -p /media /uploads /work /config
 
 ENV MEDIA_DIR=/media \
     UPLOAD_DIR=/uploads \
+    WORK_DIR=/work \
+    MAX_CONCURRENT_SYNCS=1 \
+    MAX_QUEUE_SIZE=20 \
+    SYNC_TIMEOUT_SECONDS=900 \
+    TASK_RETENTION_HOURS=24 \
     ASPNETCORE_URLS=http://+:8080 \
     ASPNETCORE_ENVIRONMENT=Production
 

@@ -9,14 +9,17 @@ public sealed partial class SafePathService
 {
     private readonly string _mediaRoot;
     private readonly string _uploadRoot;
+    private readonly string _workRoot;
 
     public SafePathService(AppPaths paths)
     {
         _mediaRoot = NormalizeRoot(paths.MediaDir);
         _uploadRoot = NormalizeRoot(paths.UploadDir);
+        _workRoot = NormalizeRoot(paths.EffectiveWorkDir);
     }
 
     public string MediaRoot => _mediaRoot;
+    public string WorkRoot => _workRoot;
 
     public string EnsureMediaPath(string path) => EnsureWithinRoot(path, _mediaRoot, "媒体目录");
 
@@ -35,6 +38,16 @@ public sealed partial class SafePathService
     }
 
     public string EnsureUploadPath(string path) => EnsureWithinRoot(path, _uploadRoot, "上传目录");
+
+    public string EnsureWorkPath(string path) => EnsureWithinRoot(path, _workRoot, "工作目录");
+
+    public string ResolveTaskDirectory(string taskId)
+    {
+        if (string.IsNullOrWhiteSpace(taskId) || !TaskIdRegex().IsMatch(taskId))
+            throw new ArgumentException("任务 ID 必须是 32 位小写十六进制字符");
+
+        return EnsureWorkPath(Path.Combine(_workRoot, taskId));
+    }
 
     public string EnsureInputPath(string path)
     {
@@ -159,4 +172,7 @@ public sealed partial class SafePathService
 
     [GeneratedRegex("^[A-Za-z0-9_-]{1,64}$", RegexOptions.CultureInvariant)]
     private static partial Regex SessionIdRegex();
+
+    [GeneratedRegex("^[a-f0-9]{32}$", RegexOptions.CultureInvariant)]
+    private static partial Regex TaskIdRegex();
 }

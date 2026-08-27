@@ -8,21 +8,43 @@ namespace SubRenamer.Web.Controllers;
 [Route("api/sync")]
 public class SyncController(SubSyncService syncService) : ControllerBase
 {
-    /// <summary>创建调轴任务(异步),返回 taskId</summary>
+    /// <summary>创建安全调轴任务，输出仅写入 staging</summary>
     [HttpPost]
-    public ActionResult Create([FromBody] SyncRequestDto req)
+    [HttpPost("tasks")]
+    public ActionResult<SyncTaskCreatedDto> Create([FromBody] SyncTaskRequestDto request)
     {
-        if (req.Items == null || req.Items.Count == 0)
+        if (request.Items is null || request.Items.Count == 0)
             return BadRequest(new ErrorResponseDto("未提供调轴项"));
-        var taskId = syncService.CreateTask(req.Items);
-        return Ok(new { taskId });
+
+        try
+        {
+            return Accepted(syncService.CreateTask(request));
+        }
+        catch (SyncQueueFullException ex)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, new ErrorResponseDto(ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ErrorResponseDto(ex.Message));
+        }
     }
 
     /// <summary>查询调轴任务进度</summary>
     [HttpGet("{taskId}/status")]
-    public ActionResult<SyncTask> Status(string taskId)
+    [HttpGet("tasks/{taskId}")]
+    public ActionResult<SyncTaskDto> Status(string taskId)
     {
         var task = syncService.GetTask(taskId);
         return task == null ? NotFound(new ErrorResponseDto("任务不存在")) : Ok(task);
+    }
+
+    /// <summary>取消排队中或执行中的调轴任务</summary>
+    [HttpPost("{taskId}/cancel")]
+    [HttpPost("tasks/{taskId}/cancel")]
+    public ActionResult<SyncTaskDto> Cancel(string taskId)
+    {
+        var task = syncService.CancelTask(taskId);
+        return task == null ? NotFound(new ErrorResponseDto("任务不存在")) : Accepted(task);
     }
 }

@@ -3,7 +3,10 @@ using SubRenamer.Web.Models;
 namespace SubRenamer.Web.Services;
 
 /// <summary>应用路径配置</summary>
-public record AppPaths(string MediaDir, string UploadDir);
+public record AppPaths(string MediaDir, string UploadDir, string? WorkDir = null)
+{
+    public string EffectiveWorkDir => WorkDir ?? Path.Combine(UploadDir, "work");
+}
 
 /// <summary>
 /// 挂载目录扫描服务:递归扫描视频与字幕文件。

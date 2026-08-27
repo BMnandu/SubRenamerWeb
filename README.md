@@ -11,7 +11,7 @@
 - **自动匹配**：调用 `SubRenamer.Core` diff 算法关联视频与字幕
 - **改名预览与微调**：执行前预览目标文件名，可手动调整匹配关系
 - **多语言字幕**：支持一个视频匹配多个字幕，自动识别 `chs`、`cht`、`zh`、`ja`、`en` 等语言标记
-- **自动调轴**：通过 FFsubsync + FFmpeg 对齐字幕时间轴，采用异步任务并实时显示进度和日志
+- **安全调轴任务**：通过 FFsubsync + FFmpeg 在独立 staging 中执行，支持逐项状态、质量门禁、超时和取消
 - **多架构镜像**：GitHub Actions 自动发布 `linux/amd64` 和 `linux/arm64` 镜像
 
 ## 使用 Docker Hub 镜像
@@ -26,13 +26,14 @@ docker run -d \
   -p 38080:8080 \
   -v /path/to/media:/media \
   --tmpfs /uploads:mode=1777 \
+  --tmpfs /work:mode=1777 \
   --restart unless-stopped \
   beiming712/subrenamerweb:latest
 ```
 
 浏览器访问 `http://宿主机IP:38080`。
 
-> 媒体目录需要可写权限，因为改名和调轴后的字幕会写入视频所在目录。
+> 媒体目录需要可写权限，因为旧改名接口会写入视频所在目录。安全调轴任务只写 `/work` staging；后续显式提交接口才会写媒体目录。
 
 ## Docker Compose
 
@@ -66,19 +67,24 @@ docker compose up -d --build
 3. **匹配**：点击“一键匹配”，自动关联视频与字幕并显示改名预览
 4. **微调**：在结果表格中手动修正匹配关系，必要时填写附加语言后缀
 5. **改名**：执行字幕改名；上传字幕会复制到视频目录，挂载字幕会在原目录改名
-6. **调轴**：对匹配结果启动调轴任务，通过进度条和日志查看处理状态
+6. **调轴**：选择全局、分段或 `no_sync` 模式，在独立 staging 中执行并查看逐项结果
 
 ### 调轴说明
 
-调轴功能调用 FFsubsync 分析视频音轨，并通过 FFmpeg 辅助处理：
+调轴功能调用固定版本的 FFsubsync 分析视频音轨，并通过 FFmpeg 辅助处理：
 
 - 任务在后台异步执行，浏览器每秒查询一次状态
-- 支持批量处理匹配结果
-- 输出字幕位于视频所在目录，文件名与视频主文件名一致并保留字幕扩展名
-- 单个项目失败后会记录错误并继续处理下一项
+- 每个任务使用 `/work/<taskId>/`，包含 `manifest.json`、`output/`、`logs/` 和 `backup/`
+- 输出先写临时文件，校验非空后原子改名为 staging 候选文件
+- 默认启用低质量拒绝，返回偏移秒数、帧率比例、质量状态与逐项错误
+- 支持 `video_global`、实验性 `video_split`、`subtitle_reference` 和 `no_sync`
+- 支持队列上限、并发上限、单项超时、取消和过期 staging 清理
+- 单个项目失败后继续处理下一项，不会删除上传字幕或修改正式字幕
 - Docker 镜像已内置 Python 3、FFsubsync 和 FFmpeg，无需额外安装
 
 调轴依赖视频中存在可分析的音轨。处理大文件时需要一定 CPU、内存和临时存储空间，ARM 设备耗时通常更长。
+
+当前阶段任务成功后状态为 `awaiting_commit`，表示候选结果已经通过校验但仍位于 staging。正式 `commit` / `rollback` API 将在下一阶段提供；不要把 PR 合并或镜像发布理解为 NAS 已部署。
 
 ## 文件权限
 
@@ -102,8 +108,9 @@ id
 | POST | `/api/subtitles/upload` | 批量上传字幕 |
 | POST | `/api/match` | 匹配视频与字幕 |
 | POST | `/api/rename` | 执行改名 |
-| POST | `/api/sync` | 创建异步调轴任务，返回 `taskId` |
-| GET | `/api/sync/{taskId}/status` | 查询调轴进度、状态和日志 |
+| POST | `/api/sync`、`/api/sync/tasks` | 创建 staging 调轴任务，返回 `taskId` |
+| GET | `/api/sync/{taskId}/status`、`/api/sync/tasks/{taskId}` | 查询总体状态、逐项指标和有限日志 |
+| POST | `/api/sync/{taskId}/cancel`、`/api/sync/tasks/{taskId}/cancel` | 取消排队中或执行中的任务 |
 | POST | `/api/sync/plans` | 创建纯预览调轴计划，返回唯一目标名称与逐项校验结果 |
 
 `/api/sync/plans` 不会写入媒体目录。它支持 `subtitle_reference`、`video_global`、`video_split` 和 `no_sync` 模式；未识别语言使用稳定的 `und` 后缀，同一视频的多个字幕会生成互不冲突的候选文件名。
@@ -132,8 +139,23 @@ dotnet run --project src/SubRenamer.Web/SubRenamer.Web.csproj
 ```bash
 MEDIA_DIR=/path/to/media \
 UPLOAD_DIR=/tmp/subrenamer-uploads \
+WORK_DIR=/tmp/subrenamer-work \
 dotnet run --project src/SubRenamer.Web/SubRenamer.Web.csproj
 ```
+
+调轴运行参数：
+
+| 环境变量 | 默认值 | 说明 |
+|---|---:|---|
+| `WORK_DIR` | `/work` | staging、manifest、日志和备份根目录 |
+| `MAX_CONCURRENT_SYNCS` | `1` | 同时执行的任务数 |
+| `MAX_QUEUE_SIZE` | `20` | 等待队列最多容纳的任务数 |
+| `SYNC_TIMEOUT_SECONDS` | `900` | 单个字幕的默认超时 |
+| `TASK_RETENTION_HOURS` | `24` | 已完成或遗留 staging 的保留时间 |
+| `MAX_TASK_LOG_ENTRIES` | `200` | 每个任务最多保留的内存日志条数 |
+| `PYTHON_EXECUTABLE` | `python3` | Python 可执行文件 |
+
+Docker 构建参数 `FFSUBSYNC_VERSION` 默认锁定为 `0.5.1`。
 
 ## 项目结构
 
