@@ -18,17 +18,30 @@ public static class LanguageHelper
     private static readonly Dictionary<string, string> StandardMap = new(StringComparer.OrdinalIgnoreCase)
     {
         // 简中 → chs
-        ["chs"] = "chs", ["sc"] = "chs", ["zh-CN"] = "chs", ["zh-Hans"] = "chs", ["gb"] = "chs", ["gb2312"] = "chs",
+        ["chs"] = "chs",
+        ["sc"] = "chs",
+        ["zh-CN"] = "chs",
+        ["zh-Hans"] = "chs",
+        ["gb"] = "chs",
+        ["gb2312"] = "chs",
         // 繁中 → cht
-        ["cht"] = "cht", ["tc"] = "cht", ["zh-TW"] = "cht", ["zh-Hant"] = "cht", ["big5"] = "cht",
+        ["cht"] = "cht",
+        ["tc"] = "cht",
+        ["zh-TW"] = "cht",
+        ["zh-Hant"] = "cht",
+        ["big5"] = "cht",
         // 通用中文 → zh
         ["zh"] = "zh",
         // 日语 → jpn
-        ["jp"] = "jpn", ["ja"] = "jpn", ["jpn"] = "jpn",
+        ["jp"] = "jpn",
+        ["ja"] = "jpn",
+        ["jpn"] = "jpn",
         // 英语 → eng
-        ["en"] = "eng", ["eng"] = "eng",
+        ["en"] = "eng",
+        ["eng"] = "eng",
         // 韩语 → kor
-        ["kor"] = "kor", ["ko"] = "kor",
+        ["kor"] = "kor",
+        ["ko"] = "kor",
     };
 
     /// <summary>
@@ -46,6 +59,11 @@ public static class LanguageHelper
         var marker = match.Groups[1].Value;
         return StandardMap.TryGetValue(marker, out var std) ? std : marker;
     }
+
+    public static string NormalizeLang(string language) =>
+        StandardMap.TryGetValue(language, out var normalized)
+            ? normalized
+            : language.ToLowerInvariant();
 
     /// <summary>
     /// 提取字幕文件名最后一部分(不校验是否语言标记)。
@@ -65,17 +83,4 @@ public static class LanguageHelper
     /// 一对多时强制提取末尾段避免冲突,单语言只认已知语言标记。
     /// extraSuffix 为用户手动追加的后缀(可选)。
     /// </summary>
-    public static string ComputeNewName(string videoPath, string subtitlePath, bool hasDuplicateKey, string? extraSuffix = null)
-    {
-        var videoNameNoExt = Path.GetFileNameWithoutExtension(videoPath);
-        var subExt = Path.GetExtension(subtitlePath);
-        var subSuffix = "";
-        if (hasDuplicateKey)
-            subSuffix = ExtractLastSegment(subtitlePath) is { } seg ? "." + seg : "";
-        else if (DetectLang(subtitlePath) is { } lang)
-            subSuffix = "." + lang;
-        if (!string.IsNullOrEmpty(extraSuffix))
-            subSuffix += "." + extraSuffix.TrimStart('.');
-        return $"{videoNameNoExt}{subSuffix}{subExt}";
-    }
 }

@@ -104,6 +104,9 @@ id
 | POST | `/api/rename` | 执行改名 |
 | POST | `/api/sync` | 创建异步调轴任务，返回 `taskId` |
 | GET | `/api/sync/{taskId}/status` | 查询调轴进度、状态和日志 |
+| POST | `/api/sync/plans` | 创建纯预览调轴计划，返回唯一目标名称与逐项校验结果 |
+
+`/api/sync/plans` 不会写入媒体目录。它支持 `subtitle_reference`、`video_global`、`video_split` 和 `no_sync` 模式；未识别语言使用稳定的 `und` 后缀，同一视频的多个字幕会生成互不冲突的候选文件名。
 
 ## 本地开发
 
