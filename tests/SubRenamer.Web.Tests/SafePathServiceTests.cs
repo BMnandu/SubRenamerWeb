@@ -112,6 +112,16 @@ public sealed class SafePathServiceTests : IDisposable
             _safePaths.ResolveUploadFile("session-01", fileName));
     }
 
+    [Theory]
+    [InlineData("short")]
+    [InlineData("ABCDEF0123456789ABCDEF0123456789")]
+    [InlineData("abcdef0123456789abcdef012345678g")]
+    [InlineData("../abcdef0123456789abcdef0123456789")]
+    public void ResolveTaskDirectory_RejectsInvalidTaskId(string taskId)
+    {
+        Assert.Throws<ArgumentException>(() => _safePaths.ResolveTaskDirectory(taskId));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_testRoot))

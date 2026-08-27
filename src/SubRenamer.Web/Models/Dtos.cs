@@ -41,22 +41,3 @@ public record ErrorResponseDto(string Error);
 
 /// <summary>目录条目信息(用于目录浏览,支持按日期排序)</summary>
 public record DirInfoDto(string Name, string Path, DateTime LastModified);
-
-/// <summary>调轴任务状态</summary>
-public class SyncTask
-{
-    public string Id { get; set; } = "";
-    public string Status { get; set; } = "queued"; // queued/running/completed
-    public int Total { get; set; }
-    public int Done { get; set; }
-    public double Progress { get; set; } // 当前项进度 0-1
-    public string CurrentVideo { get; set; } = "";
-    public List<MatchItemDto> Items { get; set; } = new();
-    public List<string> Logs { get; set; } = new();
-    public string? Error { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime? FinishedAt { get; set; }
-}
-
-/// <summary>调轴请求</summary>
-public record SyncRequestDto(List<MatchItemDto> Items);

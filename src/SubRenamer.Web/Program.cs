@@ -21,13 +21,16 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
 // 路径配置(通过环境变量注入,容器挂载点)
 builder.Services.AddSingleton(new AppPaths(
     MediaDir: NormalizeDir(builder.Configuration["MEDIA_DIR"] ?? "/media"),
-    UploadDir: NormalizeDir(builder.Configuration["UPLOAD_DIR"] ?? "/uploads")
+    UploadDir: NormalizeDir(builder.Configuration["UPLOAD_DIR"] ?? "/uploads"),
+    WorkDir: NormalizeDir(builder.Configuration["WORK_DIR"] ?? "/work")
 ));
+builder.Services.AddSingleton(SyncRuntimeOptions.FromConfiguration(builder.Configuration));
 
 builder.Services.AddSingleton<FileScanService>();
 builder.Services.AddSingleton<SafePathService>();
 builder.Services.AddSingleton<SubtitleNamingService>();
 builder.Services.AddSingleton<SyncPlanService>();
+builder.Services.AddSingleton<ISyncProcessRunner, FfsubsyncProcessRunner>();
 builder.Services.AddSingleton<RenameService>();
 builder.Services.AddSingleton<UploadService>();
 builder.Services.AddSingleton<SubSyncService>();
@@ -37,6 +40,7 @@ var app = builder.Build();
 // 启动时确保上传目录存在
 var paths = app.Services.GetRequiredService<AppPaths>();
 Directory.CreateDirectory(paths.UploadDir);
+Directory.CreateDirectory(paths.EffectiveWorkDir);
 
 app.UseStaticFiles();
 app.UseSwagger();

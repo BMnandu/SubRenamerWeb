@@ -11,9 +11,16 @@ services:
     tmpfs:
       # 上传临时目录(内存,容器重启自动清空,无需映射宿主机,无权限问题)
       - /uploads:mode=1777
+      # 调轴 staging；正式提交前只写此目录
+      - /work:mode=1777
     environment:
       - MEDIA_DIR=/media
       - UPLOAD_DIR=/uploads
+      - WORK_DIR=/work
+      - MAX_CONCURRENT_SYNCS=1
+      - MAX_QUEUE_SIZE=20
+      - SYNC_TIMEOUT_SECONDS=900
+      - TASK_RETENTION_HOURS=24
       - ASPNETCORE_URLS=http://+:8080
     # 匹配媒体目录 owner(1000:10),确保写字幕权限
     user: "1000:10"
