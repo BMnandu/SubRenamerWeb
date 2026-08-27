@@ -7,7 +7,7 @@ namespace SubRenamer.Web.Controllers;
 
 [ApiController]
 [Route("api/match")]
-public class MatchController : ControllerBase
+public class MatchController(SubtitleNamingService namingService) : ControllerBase
 {
     /// <summary>调用 SubRenamer.Core 匹配算法,返回视频↔字幕对应关系(含改名预览)</summary>
     [HttpPost]
@@ -34,7 +34,7 @@ public class MatchController : ControllerBase
 
         var withPreview = list.Select(x =>
             (!string.IsNullOrEmpty(x.Video) && !string.IsNullOrEmpty(x.Subtitle))
-                ? x with { Preview = LanguageHelper.ComputeNewName(x.Video, x.Subtitle, hasDup) }
+                ? x with { Preview = namingService.ComputeLegacyName(x.Video, x.Subtitle, hasDup) }
                 : x
         ).ToList();
 

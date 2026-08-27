@@ -20,9 +20,10 @@ public class LanguageHelperTests
     public void ComputeNewName_PreservesDistinctLanguageSuffixes()
     {
         var video = "/media/Show S01E01.mkv";
+        var namingService = new SubtitleNamingService();
 
-        var simplified = LanguageHelper.ComputeNewName(video, "/uploads/Show.01.chs.ass", true);
-        var traditional = LanguageHelper.ComputeNewName(video, "/uploads/Show.01.cht.ass", true);
+        var simplified = namingService.ComputeLegacyName(video, "/uploads/Show.01.chs.ass", true);
+        var traditional = namingService.ComputeLegacyName(video, "/uploads/Show.01.cht.ass", true);
 
         Assert.Equal("Show S01E01.chs.ass", simplified);
         Assert.Equal("Show S01E01.cht.ass", traditional);

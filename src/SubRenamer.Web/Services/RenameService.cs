@@ -8,7 +8,7 @@ namespace SubRenamer.Web.Services;
 /// 2. 同文件夹模式:字幕与视频同在 MediaDir,直接改名(可备份)
 /// 自动按字幕路径所在目录判断模式。
 /// </summary>
-public class RenameService(SafePathService safePaths)
+public class RenameService(SafePathService safePaths, SubtitleNamingService namingService)
 {
     public RenameResponseDto Rename(RenameRequestDto req)
     {
@@ -35,7 +35,7 @@ public class RenameService(SafePathService safePaths)
                 var subPath = safePaths.EnsureInputPath(subtitle);
 
                 var videoDir = Path.GetDirectoryName(videoPath) ?? "";
-                var newName = LanguageHelper.ComputeNewName(videoPath, subPath, hasDuplicateKey, req.LangSuffix);
+                var newName = namingService.ComputeLegacyName(videoPath, subPath, hasDuplicateKey, req.LangSuffix);
                 var newPath = safePaths.EnsureMediaPath(Path.Combine(videoDir, newName));
 
                 var subDir = Path.GetDirectoryName(subPath) ?? "";

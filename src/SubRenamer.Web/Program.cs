@@ -1,8 +1,14 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using SubRenamer.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers().AddJsonOptions(options =>
+{
+    options.JsonSerializerOptions.Converters.Add(
+        new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower));
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -20,6 +26,8 @@ builder.Services.AddSingleton(new AppPaths(
 
 builder.Services.AddSingleton<FileScanService>();
 builder.Services.AddSingleton<SafePathService>();
+builder.Services.AddSingleton<SubtitleNamingService>();
+builder.Services.AddSingleton<SyncPlanService>();
 builder.Services.AddSingleton<RenameService>();
 builder.Services.AddSingleton<UploadService>();
 builder.Services.AddSingleton<SubSyncService>();
