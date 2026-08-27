@@ -8,7 +8,7 @@ namespace SubRenamer.Web.Services;
 /// 2. 同文件夹模式:字幕与视频同在 MediaDir,直接改名(可备份)
 /// 自动按字幕路径所在目录判断模式。
 /// </summary>
-public class RenameService(AppPaths paths)
+public class RenameService(SafePathService safePaths)
 {
     public RenameResponseDto Rename(RenameRequestDto req)
     {
@@ -31,15 +31,12 @@ public class RenameService(AppPaths paths)
                 if (string.IsNullOrEmpty(video) || string.IsNullOrEmpty(subtitle))
                     continue; // 未匹配项,跳过
 
-                var videoPath = Path.GetFullPath(video);
-                var subPath = Path.GetFullPath(subtitle);
-
-                if (!IsPathSafe(videoPath) || !IsPathSafe(subPath))
-                    throw new UnauthorizedAccessException("路径越界,禁止访问挂载/上传目录之外");
+                var videoPath = safePaths.EnsureMediaPath(video);
+                var subPath = safePaths.EnsureInputPath(subtitle);
 
                 var videoDir = Path.GetDirectoryName(videoPath) ?? "";
                 var newName = LanguageHelper.ComputeNewName(videoPath, subPath, hasDuplicateKey, req.LangSuffix);
-                var newPath = Path.Combine(videoDir, newName);
+                var newPath = safePaths.EnsureMediaPath(Path.Combine(videoDir, newName));
 
                 var subDir = Path.GetDirectoryName(subPath) ?? "";
                 var sameFolder = string.Equals(subDir, videoDir, StringComparison.OrdinalIgnoreCase);
@@ -90,8 +87,4 @@ public class RenameService(AppPaths paths)
     {
         try { File.Delete(path); } catch { /* 忽略临时文件清理失败 */ }
     }
-
-    private bool IsPathSafe(string path) =>
-        path.StartsWith(paths.MediaDir, StringComparison.Ordinal)
-        || path.StartsWith(paths.UploadDir, StringComparison.Ordinal);
 }
