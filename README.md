@@ -128,7 +128,7 @@ id
 ```bash
 dotnet restore SubRenamer.Web.sln
 dotnet build SubRenamer.Web.sln -c Release --no-restore
-dotnet test SubRenamer.Web.sln -c Release --no-build
+dotnet test SubRenamer.Web.sln -c Release --no-build --filter "Category!=EndToEnd"
 dotnet run --project src/SubRenamer.Web/SubRenamer.Web.csproj
 ```
 
@@ -139,6 +139,22 @@ dotnet run --project src/SubRenamer.Web/SubRenamer.Web.csproj
 - Python 3
 - FFmpeg
 - `ffsubsync` Python 包
+
+真实调轴端到端测试会由 FFmpeg 动态生成一个 8 秒测试视频，再调用锁定版本的 FFsubsync 校正整体晚 2 秒的字幕，并验证 staging、commit 与 rollback：
+
+```bash
+python3 -m venv .venv-e2e
+.venv-e2e/bin/python -m pip install "ffsubsync==0.5.1"
+
+RUN_REAL_SYNC_E2E=1 \
+PYTHON_EXECUTABLE="$PWD/.venv-e2e/bin/python" \
+FFMPEG_EXECUTABLE=ffmpeg \
+dotnet test tests/SubRenamer.Web.Tests/SubRenamer.Web.Tests.csproj \
+  -c Release \
+  --filter "Category=EndToEnd"
+```
+
+未设置 `RUN_REAL_SYNC_E2E=1` 时，普通单元测试不会要求开发机安装 FFmpeg 或 FFsubsync；GitHub Actions 会在独立的 `Real FFmpeg + FFsubsync E2E` 作业中强制执行该测试。
 
 本地运行时可通过环境变量指定目录：
 

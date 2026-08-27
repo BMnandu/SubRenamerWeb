@@ -348,7 +348,7 @@ public sealed class SubSyncService : IAsyncDisposable
     {
         item.Start();
         task.AddLog($"开始处理 {Path.GetFileName(item.Subtitle)}");
-        var temporaryOutput = _safePaths.EnsureWorkPath($"{item.StagingOutput}.tmp-{Guid.NewGuid():N}");
+        var temporaryOutput = CreateTemporaryOutputPath(item.StagingOutput);
         var timeoutSeconds = task.Options.TimeoutSeconds ?? _runtimeOptions.TimeoutSeconds;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(task.Cancellation.Token);
         timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
@@ -591,6 +591,16 @@ public sealed class SubSyncService : IAsyncDisposable
     {
         if (!File.Exists(output) || new FileInfo(output).Length == 0)
             throw new InvalidOperationException("ffsubsync 未生成有效输出文件");
+    }
+
+    private string CreateTemporaryOutputPath(string stagingOutput)
+    {
+        var directory = Path.GetDirectoryName(stagingOutput)
+            ?? throw new InvalidOperationException("staging 输出目录无效");
+        var extension = Path.GetExtension(stagingOutput);
+        var fileName = Path.GetFileNameWithoutExtension(stagingOutput);
+        return _safePaths.EnsureWorkPath(
+            Path.Combine(directory, $"{fileName}.tmp-{Guid.NewGuid():N}{extension}"));
     }
 
     private static void FinalizeOutput(string temporaryOutput, string stagingOutput)

@@ -13,7 +13,7 @@ git switch -c feat/<主题>
 
 dotnet restore SubRenamer.Web.sln
 dotnet build SubRenamer.Web.sln -c Release --no-restore
-dotnet test SubRenamer.Web.sln -c Release --no-build
+dotnet test SubRenamer.Web.sln -c Release --no-build --filter "Category!=EndToEnd"
 ```
 
 提交前请确认：

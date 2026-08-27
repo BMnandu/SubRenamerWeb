@@ -72,6 +72,29 @@ public sealed class SubSyncServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SyncRunner_TemporaryOutputPreservesSubtitleExtension()
+    {
+        var video = CreateFile(_mediaRoot, "Show S01E01.mkv", "video");
+        var subtitle = CreateFile(_uploadRoot, "Subtitle.01.ass", "subtitle");
+        var runner = new StubRunner(async (request, _, _, _) =>
+        {
+            Assert.Equal(".ass", Path.GetExtension(request.Output));
+            Assert.Contains(".tmp-", Path.GetFileNameWithoutExtension(request.Output));
+            await File.WriteAllTextAsync(request.Output, "synced");
+            return new SyncProcessResult(true, 0, 1);
+        });
+        await using var service = CreateService(runner);
+
+        var created = service.CreateTask(new SyncTaskRequestDto([
+            new("01", video, subtitle)
+        ]));
+        var task = await WaitForTerminalAsync(service, created.TaskId);
+
+        Assert.Equal(SyncTaskStatus.AwaitingCommit, task.Status);
+        Assert.Equal(SyncTaskItemStatus.Succeeded, task.Items[0].Status);
+    }
+
+    [Fact]
     public async Task LowQualityResult_IsRejectedAndOutputIsRemoved()
     {
         var video = CreateFile(_mediaRoot, "Show S01E01.mkv", "video");
