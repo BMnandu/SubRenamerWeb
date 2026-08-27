@@ -21,4 +21,10 @@
     <ProjectReference Include="..\..\src\SubRenamer.Web\SubRenamer.Web.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="..\fixtures\sync\**\*"
+          Link="fixtures\sync\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

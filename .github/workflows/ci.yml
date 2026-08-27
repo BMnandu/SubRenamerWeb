@@ -32,7 +32,12 @@ jobs:
         run: dotnet build SubRenamer.Web.sln -c Release --no-restore
 
       - name: Test
-        run: dotnet test SubRenamer.Web.sln -c Release --no-build --logger "console;verbosity=normal"
+        run: >-
+          dotnet test SubRenamer.Web.sln
+          -c Release
+          --no-build
+          --filter "Category!=EndToEnd"
+          --logger "console;verbosity=normal"
 
   docker:
     name: Docker build
@@ -53,3 +58,37 @@ jobs:
           tags: subrenamerweb:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  real-sync-e2e:
+    name: Real FFmpeg + FFsubsync E2E
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Install FFmpeg and Python virtual environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg python3-venv
+
+      - name: Install locked FFsubsync
+        run: |
+          python3 -m venv .venv-e2e
+          .venv-e2e/bin/python -m pip install --upgrade pip
+          .venv-e2e/bin/python -m pip install "ffsubsync==0.5.1"
+
+      - name: Run real synchronization end-to-end test
+        env:
+          RUN_REAL_SYNC_E2E: "1"
+          PYTHON_EXECUTABLE: ${{ github.workspace }}/.venv-e2e/bin/python
+          FFMPEG_EXECUTABLE: ffmpeg
+        run: >-
+          dotnet test tests/SubRenamer.Web.Tests/SubRenamer.Web.Tests.csproj
+          -c Release
+          --filter "Category=EndToEnd"
+          --logger "console;verbosity=normal"
