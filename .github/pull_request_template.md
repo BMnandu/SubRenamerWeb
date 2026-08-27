@@ -14,7 +14,8 @@
 
 - [ ] `dotnet restore SubRenamer.Web.sln`
 - [ ] `dotnet build SubRenamer.Web.sln -c Release --no-restore`
-- [ ] `dotnet test SubRenamer.Web.sln -c Release --no-build`
+- [ ] `dotnet test SubRenamer.Web.sln -c Release --no-build --filter "Category!=EndToEnd"`
+- [ ] 涉及调轴时已执行 `Category=EndToEnd` 真实 FFmpeg + FFsubsync 测试
 - [ ] 涉及容器时已完成 Docker 构建
 
 实际执行结果：
