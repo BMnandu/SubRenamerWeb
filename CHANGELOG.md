@@ -2,7 +2,7 @@
 
 本项目按语义化版本管理公开版本。尚未创建对应 Git 标签的版本标记为“待发布”。
 
-## [1.1.0] - 待发布
+## [1.1.0] - 2026-08-27
 
 ### 新增
 
@@ -37,5 +37,5 @@
 - 初始 ASP.NET Core WebUI 与 Docker 版本。
 - 提供字幕扫描、上传、匹配、批量改名和基础 FFsubsync 调轴。
 
-[1.1.0]: https://github.com/BMnandu/SubRenamerWeb/compare/v1.0.0...HEAD
+[1.1.0]: https://github.com/BMnandu/SubRenamerWeb/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/BMnandu/SubRenamerWeb/tree/v1.0.0

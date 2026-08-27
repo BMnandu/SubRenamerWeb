@@ -219,7 +219,7 @@ SubRenamer.Web/
 - `beiming712/subrenamerweb:1.1.0`
 - `beiming712/subrenamerweb:1.1`
 
-创建版本标签前应完成 [v1.1.0 发布检查清单](docs/v1.1.0-发布检查清单.md)，版本变化参见 [更新日志](CHANGELOG.md)。镜像发布不代表已经部署到 NAS。
+创建版本标签前应完成 [v1.1.0 发布检查清单](docs/v1.1.0-发布检查清单.md)，并遵循 [版本与标签规范](docs/版本与标签规范.md)。版本变化参见 [更新日志](CHANGELOG.md)。镜像发布不代表已经部署到 NAS。
 
 ## 后续计划
 
