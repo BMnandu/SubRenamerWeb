@@ -140,7 +140,11 @@ dotnet run --project src/SubRenamer.Web/SubRenamer.Web.csproj
 - FFmpeg
 - `ffsubsync` Python 包
 
-真实调轴端到端测试会由 FFmpeg 动态生成一个 8 秒测试视频，再调用锁定版本的 FFsubsync 校正整体晚 2 秒的字幕，并验证 staging、commit 与 rollback：
+真实调轴端到端测试会调用锁定版本的 FFsubsync，并由 FFmpeg 动态生成测试视频，覆盖：
+
+- `video_global`：校正整体晚 2 秒的字幕，并验证 staging、commit 与 rollback；
+- `subtitle_reference`：按参考字幕时间轴校正，同时确认输入字幕与参考字幕均未修改；
+- 实验性 `video_split`：把前后两组分别晚 2 秒和 4 秒的字幕校正到同一视频时间轴。
 
 ```bash
 python3 -m venv .venv-e2e
@@ -155,6 +159,8 @@ dotnet test tests/SubRenamer.Web.Tests/SubRenamer.Web.Tests.csproj \
 ```
 
 未设置 `RUN_REAL_SYNC_E2E=1` 时，普通单元测试不会要求开发机安装 FFmpeg 或 FFsubsync；GitHub Actions 会在独立的 `Real FFmpeg + FFsubsync E2E` 作业中强制执行该测试。
+
+`video_split` 的 `offsetSeconds` 是 FFsubsync 对各字幕偏移量计算的中位数，仅用于汇总展示；分段模式不会对所有字幕应用同一个偏移，最终 staging 文件才是逐条校正结果的权威来源。
 
 本地运行时可通过环境变量指定目录：
 
@@ -185,6 +191,7 @@ Docker 构建参数 `FFSUBSYNC_VERSION` 默认锁定为 `0.5.1`。
 SubRenamer.Web/
 ├── .github/workflows/         # AMD64/ARM64 镜像发布流水线
 ├── docs/                      # 开发、API 与迁移文档
+├── CHANGELOG.md               # 版本变更与已知限制
 ├── src/
 │   ├── SubRenamer.Core/       # 原项目核心匹配算法（零修改）
 │   └── SubRenamer.Web/        # ASP.NET Core Web API + 单页前端
@@ -212,11 +219,15 @@ SubRenamer.Web/
 - `beiming712/subrenamerweb:1.1.0`
 - `beiming712/subrenamerweb:1.1`
 
+创建版本标签前应完成 [v1.1.0 发布检查清单](docs/v1.1.0-发布检查清单.md)，版本变化参见 [更新日志](CHANGELOG.md)。镜像发布不代表已经部署到 NAS。
+
 ## 后续计划
 
 - [x] FFsubsync + FFmpeg 自动调轴（异步任务 + 进度轮询）
 - [x] 多语言字幕一对多匹配与语言标记识别
 - [x] Docker Hub AMD64/ARM64 多架构镜像发布
+- [x] staging、质量门禁、显式提交与安全回滚
+- [x] 三种调轴模式的真实 FFmpeg + FFsubsync 端到端验证
 - [ ] 手动匹配规则编辑器（正则）
 - [ ] 跨层级目录递归搜索
 
