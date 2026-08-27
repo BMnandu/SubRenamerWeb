@@ -14,6 +14,17 @@
 - **安全调轴任务**：通过 FFsubsync + FFmpeg 在独立 staging 中执行，支持逐项状态、质量门禁、超时和取消
 - **多架构镜像**：GitHub Actions 自动发布 `linux/amd64` 和 `linux/arm64` 镜像
 
+## v1.1.0 主要更新
+
+- 调轴结果先写入独立 staging，通过质量门禁后再显式提交到媒体目录
+- 同集多语言字幕使用唯一目标名称，避免候选文件互相覆盖
+- 增加任务队列、并发上限、单项超时、取消、有限日志和过期任务清理
+- 提交默认拒绝覆盖；允许覆盖时自动备份，并支持基于文件哈希的安全回滚
+- 加固媒体目录、上传目录和工作目录的路径边界及子进程调用
+- 支持视频全局调轴、参考字幕调轴、实验性分段调轴和不调轴 staging
+
+完整变化和兼容性说明参见 [更新日志](CHANGELOG.md) 与 [v1.1 调轴任务 API 迁移说明](docs/v1.1-调轴任务API迁移.md)。
+
 ## 使用 Docker Hub 镜像
 
 镜像地址：[`beiming712/subrenamerweb`](https://hub.docker.com/r/beiming712/subrenamerweb)
@@ -66,9 +77,11 @@ docker compose up -d --build
 2. **上传**：将字幕批量拖入上传区；如果字幕已与视频放在同一目录，可跳过此步
 3. **匹配**：点击“一键匹配”，自动关联视频与字幕并显示改名预览
 4. **微调**：在结果表格中手动修正匹配关系，必要时填写附加语言后缀
-5. **改名**：执行字幕改名；上传字幕会复制到视频目录，挂载字幕会在原目录改名
-6. **调轴**：选择全局、分段或 `no_sync` 模式，在独立 staging 中执行并查看逐项结果
-7. **提交或回滚**：通过质量门禁后显式提交；需要覆盖时勾选“允许覆盖”，系统会先备份旧字幕
+5. **调轴到 staging**：选择视频全局、实验性分段或“不调轴”模式，执行任务并查看逐项结果
+6. **检查并提交**：确认候选名称、质量状态和错误信息后，显式提交到媒体目录；目标已存在时默认拒绝覆盖
+7. **按需回滚**：提交后如果需要撤销，可回滚本任务写入且未被外部修改的字幕
+
+> “执行改名”是为旧版批量改名场景保留的独立功能，会直接复制或改名媒体目录中的字幕。需要调轴时不要先执行改名，应使用“调轴到 staging → 检查 → 提交”的安全流程，避免后续任务继续引用改名前的旧路径。
 
 ### 调轴说明
 
@@ -78,12 +91,12 @@ docker compose up -d --build
 - 每个任务使用 `/work/<taskId>/`，包含 `manifest.json`、`output/`、`logs/` 和 `backup/`
 - 输出先写临时文件，校验非空后原子改名为 staging 候选文件
 - 默认启用低质量拒绝，返回偏移秒数、帧率比例、质量状态与逐项错误
-- 支持 `video_global`、实验性 `video_split`、`subtitle_reference` 和 `no_sync`
+- WebUI 支持 `video_global`、实验性 `video_split` 和 `no_sync`；`subtitle_reference` 目前通过 API 使用
 - 支持队列上限、并发上限、单项超时、取消和过期 staging 清理
 - 单个项目失败后继续处理下一项，不会删除上传字幕或修改正式字幕
 - `commit` 默认拒绝已存在目标；显式允许覆盖时，旧文件先备份到任务 `backup/`
 - `rollback` 会校验当前目标哈希，只处理本任务提交且未被外部修改的文件
-- staging 和备份默认保留，使重复 `commit` / `rollback` 返回明确的幂等结果
+- staging 和备份在任务保留期内继续存在，使重复 `commit` / `rollback` 返回明确的幂等结果；默认保留期为 24 小时
 - Docker 镜像已内置 Python 3、FFsubsync 和 FFmpeg，无需额外安装
 
 调轴依赖视频中存在可分析的音轨。处理大文件时需要一定 CPU、内存和临时存储空间，ARM 设备耗时通常更长。
@@ -119,7 +132,7 @@ id
 | POST | `/api/sync/{taskId}/rollback`、`/api/sync/tasks/{taskId}/rollback` | 回滚本任务已提交且未被外部修改的文件 |
 | POST | `/api/sync/plans` | 创建纯预览调轴计划，返回唯一目标名称与逐项校验结果 |
 
-`/api/sync/plans` 不会写入媒体目录。它支持 `subtitle_reference`、`video_global`、`video_split` 和 `no_sync` 模式；未识别语言使用稳定的 `und` 后缀，同一视频的多个字幕会生成互不冲突的候选文件名。
+`/api/sync/plans` 不会写入媒体目录。它支持 `subtitle_reference`、`video_global`、`video_split` 和 `no_sync` 模式；未识别语言使用稳定的 `und` 后缀，同一视频的多个字幕会生成互不冲突的候选文件名。纯预览计划和参考字幕选择目前未集成到 WebUI，需要由 API 调用方传入。
 
 ## 本地开发
 
